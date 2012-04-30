@@ -1,0 +1,79 @@
+#ifndef __LINUX_NET_AFBUS_H
+#define __LINUX_NET_AFBUS_H
+
+#include <linux/socket.h>
+#include <linux/un.h>
+#include <linux/bus.h>
+#include <linux/mutex.h>
+#include <net/sock.h>
+
+extern void bus_inflight(struct file *fp);
+extern void bus_notinflight(struct file *fp);
+extern void bus_gc(void);
+extern void wait_for_bus_gc(void);
+extern struct sock *bus_get_socket(struct file *filp);
+extern struct sock *bus_peer_get(struct sock *);
+
+#define BUS_HASH_SIZE	256
+
+extern unsigned int bus_tot_inflight;
+extern spinlock_t bus_table_lock;
+extern struct hlist_head bus_socket_table[BUS_HASH_SIZE + 1];
+
+struct bus_address {
+	atomic_t	refcnt;
+	int		len;
+	unsigned	hash;
+	struct sockaddr_un name[0];
+};
+
+struct bus_skb_parms {
+	struct pid		*pid;		/* Skb credentials	*/
+	const struct cred	*cred;
+	struct scm_fp_list	*fp;		/* Passed files		*/
+#ifdef CONFIG_SECURITY_NETWORK
+	u32			secid;		/* Security ID		*/
+#endif
+};
+
+#define BUSCB(skb) 	(*(struct bus_skb_parms *)&((skb)->cb))
+#define BUSSID(skb)	(&BUSCB((skb)).secid)
+
+#define bus_state_lock(s)	spin_lock(&bus_sk(s)->lock)
+#define bus_state_unlock(s)	spin_unlock(&bus_sk(s)->lock)
+#define bus_state_lock_nested(s) \
+				spin_lock_nested(&bus_sk(s)->lock, \
+				SINGLE_DEPTH_NESTING)
+
+/* The AF_BUS socket */
+struct bus_sock {
+	/* WARNING: sk has to be the first member */
+	struct sock		sk;
+	struct bus_address     *addr;
+	struct path		path;
+	struct mutex		readlock;
+	struct sock		*peer;
+	struct sock		*other;
+	struct list_head	link;
+	atomic_long_t		inflight;
+	spinlock_t		lock;
+	unsigned int		gc_candidate : 1;
+	unsigned int		gc_maybe_cycle : 1;
+	unsigned char		recursion_level;
+	struct socket_wq	peer_wq;
+};
+#define bus_sk(__sk) ((struct bus_sock *)__sk)
+
+#define peer_wait peer_wq.wait
+
+long bus_inq_len(struct sock *sk);
+long bus_outq_len(struct sock *sk);
+
+#ifdef CONFIG_SYSCTL
+extern int bus_sysctl_register(struct net *net);
+extern void bus_sysctl_unregister(struct net *net);
+#else
+static inline int bus_sysctl_register(struct net *net) { return 0; }
+static inline void bus_sysctl_unregister(struct net *net) {}
+#endif
+#endif

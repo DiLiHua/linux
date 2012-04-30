@@ -1,0 +1,14 @@
+#
+# Bus Domain Sockets
+#
+
+config BUS
+	tristate "Bus domain sockets"
+	---help---
+	  If you say Y here, you will include support for Bus domain sockets.
+	  These sockets are used to create communication buses for IPC.
+
+	  To compile this driver as a module, choose M here: the module will be
+	  called bus.
+
+	  Say Y unless you know what you are doing.
