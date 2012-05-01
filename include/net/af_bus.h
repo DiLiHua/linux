@@ -25,6 +25,9 @@ struct bus_address {
 	int		len;
 	unsigned	hash;
 	struct sockaddr_un name[0];
+	atomic_t         addr;
+	struct hlist_node node;
+	struct bus_sock  *sock;
 };
 
 struct bus_skb_parms {
@@ -45,11 +48,19 @@ struct bus_skb_parms {
 				spin_lock_nested(&bus_sk(s)->lock, \
 				SINGLE_DEPTH_NESTING)
 
+struct bus {
+	struct sock		*master;
+	struct hlist_head       *peers;
+	spinlock_t		lock;
+	u64                     scope;
+};
+
 /* The AF_BUS socket */
 struct bus_sock {
 	/* WARNING: sk has to be the first member */
 	struct sock		sk;
 	struct bus_address     *addr;
+	struct hlist_head       addr_list;
 	struct path		path;
 	struct mutex		readlock;
 	struct sock		*peer;
@@ -61,6 +72,10 @@ struct bus_sock {
 	unsigned int		gc_maybe_cycle : 1;
 	unsigned char		recursion_level;
 	struct socket_wq	peer_wq;
+	struct bus              *bus;
+	bool                    bus_master;
+	bool                    authenticated;
+	struct hlist_node	bus_node;
 };
 #define bus_sk(__sk) ((struct bus_sock *)__sk)
 
