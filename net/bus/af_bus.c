@@ -22,6 +22,7 @@
 #include <linux/namei.h>
 #include <linux/socket.h>
 #include <linux/un.h>
+#include <linux/bus.h>
 #include <linux/fcntl.h>
 #include <linux/termios.h>
 #include <linux/sockios.h>
@@ -518,9 +519,14 @@ static struct sock *bus_create1(struct net *net, struct socket *sock)
 	u	  = bus_sk(sk);
 	u->path.dentry = NULL;
 	u->path.mnt = NULL;
+	u->bus = NULL;
+	u->bus_master = false;
+	u->authenticated = false;
 	spin_lock_init(&u->lock);
 	atomic_long_set(&u->inflight, 0);
 	INIT_LIST_HEAD(&u->link);
+	INIT_HLIST_HEAD(&u->addr_list);
+	INIT_HLIST_NODE(&u->bus_node);
 	mutex_init(&u->readlock); /* single task reading lock */
 	init_waitqueue_head(&u->peer_wait);
 	bus_insert_socket(bus_sockets_unbound, sk);
