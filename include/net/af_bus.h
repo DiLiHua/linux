@@ -24,8 +24,7 @@ struct bus_address {
 	atomic_t	refcnt;
 	int		len;
 	unsigned	hash;
-	struct sockaddr_un name[0];
-	atomic_t         addr;
+	struct sockaddr_bus name[0];
 	struct hlist_node node;
 	struct bus_sock  *sock;
 };
@@ -52,7 +51,7 @@ struct bus {
 	struct sock		*master;
 	struct hlist_head       *peers;
 	spinlock_t		lock;
-	u64                     scope;
+	atomic64_t              addr_cnt;
 };
 
 /* The AF_BUS socket */
