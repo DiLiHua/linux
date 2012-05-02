@@ -13,8 +13,8 @@ struct bus_addr {
 /* Structure describing an AF_BUS socket address. */
 struct sockaddr_bus {
 	__kernel_sa_family_t sbus_family; /* AF_BUS */
-	char sbus_path[BUS_PATH_MAX];  /* pathname */
 	struct bus_addr      sbus_addr;   /* bus address */
+	char sbus_path[BUS_PATH_MAX];  /* pathname */
 };
 
 #endif /* _LINUX_BUS_H */

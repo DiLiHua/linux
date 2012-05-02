@@ -48,8 +48,10 @@
 #include <linux/security.h>
 
 struct hlist_head bus_socket_table[BUS_HASH_SIZE + 1];
+struct hlist_head bus_address_table[BUS_HASH_SIZE + 1];
 EXPORT_SYMBOL_GPL(bus_socket_table);
 DEFINE_SPINLOCK(bus_table_lock);
+DEFINE_SPINLOCK(bus_address_lock);
 EXPORT_SYMBOL_GPL(bus_table_lock);
 static atomic_long_t bus_nr_socks;
 
@@ -146,7 +148,7 @@ static int bus_mkname(struct sockaddr_bus *sbusaddr, int len, unsigned *hashp)
 		 * we are guaranteed that it is a valid memory location in our
 		 * kernel address buffer.
 		 */
-		((char *)sbusaddr)[len] = 0;
+//		((char *)sbusaddr)[len] = 0;
 		len = strlen(sbusaddr->sbus_path)+1+sizeof(short) +
 			sizeof(struct bus_addr);
 		return len;
@@ -154,6 +156,32 @@ static int bus_mkname(struct sockaddr_bus *sbusaddr, int len, unsigned *hashp)
 
 	*hashp = bus_hash_fold(csum_partial(sbusaddr, len, 0));
 	return len;
+}
+
+static void __bus_remove_address(struct bus_address *addr)
+{
+	hlist_del(&addr->table_node);
+}
+
+static void __bus_insert_address(struct hlist_head *list,
+				 struct bus_address *addr)
+{
+	hlist_add_head(&addr->table_node, list);
+}
+
+static inline void bus_remove_address(struct bus_address *addr)
+{
+	spin_lock(&bus_address_lock);
+	__bus_remove_address(addr);
+	spin_unlock(&bus_address_lock);
+}
+
+static inline void bus_insert_address(struct hlist_head *list,
+				      struct bus_address *addr)
+{
+	spin_lock(&bus_address_lock);
+	__bus_insert_address(list, addr);
+	spin_unlock(&bus_address_lock);
 }
 
 static void __bus_remove_socket(struct sock *sk)
@@ -314,6 +342,8 @@ static int bus_release_sock(struct sock *sk, int embrion)
 	struct sock *skpair;
 	struct sk_buff *skb;
 	int state;
+	struct bus_address *addr;
+	struct hlist_node *node, *tmp;
 
 	bus_remove_socket(sk);
 
@@ -326,6 +356,21 @@ static int bus_release_sock(struct sock *sk, int embrion)
 	u->path.mnt = NULL;
 	state = sk->sk_state;
 	sk->sk_state = TCP_CLOSE;
+
+	if (u->bus_master) {
+			spin_lock(&u->bus->lock);
+			hlist_del(&u->bus_node);
+			u->bus->master = NULL;
+			spin_unlock(&u->bus->lock);
+	}
+
+	spin_lock(&bus_address_lock);
+	hlist_for_each_entry_safe(addr, node, tmp, &u->addr_list, addr_node) {
+		hlist_del(&addr->addr_node);
+		__bus_remove_address(addr);
+	}
+	spin_unlock(&bus_address_lock);
+
 	bus_state_unlock(sk);
 
 	wake_up_interruptible_all(&u->peer_wait);
@@ -410,8 +455,8 @@ static int bus_listen(struct socket *sock, int backlog)
 	if (sock->type != SOCK_STREAM && sock->type != SOCK_SEQPACKET)
 		goto out;	/* Only stream/seqpacket sockets accept */
 	err = -EINVAL;
-	if (!u->addr)
-		goto out;	/* No listens on an unbound socket */
+	if (!u->addr || !u->bus_master)
+		goto out;	/* Only listens on an bound an master socket */
 	bus_state_lock(sk);
 	if (sk->sk_state != TCP_CLOSE && sk->sk_state != TCP_LISTEN)
 		goto out_unlock;
@@ -698,15 +743,14 @@ static int bus_bind(struct socket *sock, struct sockaddr *uaddr, int addr_len)
 	unsigned hash;
 	struct bus_address *addr;
 	struct hlist_head *list;
+	struct bus *bus;
 
 	err = -EINVAL;
 	if (sbusaddr->sbus_family != AF_BUS)
 		goto out;
 
-	if (addr_len == sizeof(short)) {
-		err = bus_autobind(sock);
-		goto out;
-	}
+	/* If the address is available, the socket is the bus master */
+	sbusaddr->sbus_addr.s_addr = 0x0;
 
 	err = bus_mkname(sbusaddr, addr_len, &hash);
 	if (err < 0)
@@ -720,7 +764,7 @@ static int bus_bind(struct socket *sock, struct sockaddr *uaddr, int addr_len)
 		goto out_up;
 
 	err = -ENOMEM;
-	addr = kmalloc(sizeof(*addr)+addr_len, GFP_KERNEL);
+	addr = kzalloc(sizeof(*addr) + addr_len, GFP_KERNEL);
 	if (!addr)
 		goto out_up;
 
@@ -728,6 +772,9 @@ static int bus_bind(struct socket *sock, struct sockaddr *uaddr, int addr_len)
 	addr->len = addr_len;
 	addr->hash = hash ^ sk->sk_type;
 	atomic_set(&addr->refcnt, 1);
+	addr->sock = sk;
+	INIT_HLIST_NODE(&addr->addr_node);
+	INIT_HLIST_NODE(&addr->table_node);
 
 	if (sbus_path[0]) {
 		umode_t mode;
@@ -780,10 +827,27 @@ out_mknod_drop_write:
 		u->path = path;
 	}
 
+	err = -ENOMEM;
+	bus = kzalloc(sizeof(*bus), GFP_KERNEL);
+	if (!bus)
+		goto out_unlock;
+
+	bus->master = sk;
+	INIT_HLIST_HEAD(&bus->peers);
+	spin_lock_init(&bus->lock);
+	atomic64_set(&bus->addr_cnt, 0);
+
+	hlist_add_head(&addr->addr_node, &u->addr_list);
+	hlist_add_head(&u->bus_node, &bus->peers);
+
 	err = 0;
 	__bus_remove_socket(sk);
 	u->addr = addr;
+	u->bus_master = true;
+	u->bus = bus;
 	__bus_insert_socket(list, sk);
+
+	bus_insert_address(&bus_address_table[addr->hash], addr);
 
 out_unlock:
 	spin_unlock(&bus_table_lock);
@@ -834,6 +898,7 @@ static int bus_stream_connect(struct socket *sock, struct sockaddr *uaddr,
 	struct sock *newsk = NULL;
 	struct sock *other = NULL;
 	struct sk_buff *skb = NULL;
+	struct bus_address *addr = NULL;
 	unsigned hash;
 	int st;
 	int err;
@@ -844,9 +909,14 @@ static int bus_stream_connect(struct socket *sock, struct sockaddr *uaddr,
 		goto out;
 	addr_len = err;
 
-	if (test_bit(SOCK_PASSCRED, &sock->flags) && !u->addr &&
-	    (err = bus_autobind(sock)) != 0)
+	err = -ENOMEM;
+	addr = kzalloc(sizeof(*addr) + sizeof(struct sockaddr_bus), GFP_KERNEL);
+	if (!addr)
 		goto out;
+
+	atomic_set(&addr->refcnt, 1);
+	INIT_HLIST_NODE(&addr->addr_node);
+	INIT_HLIST_NODE(&addr->table_node);
 
 	timeo = sock_sndtimeo(sk, flags & O_NONBLOCK);
 
@@ -956,9 +1026,24 @@ restart:
 	otheru = bus_sk(other);
 
 	/* copy address information from listening to new sock*/
-	if (otheru->addr) {
+	if (otheru->addr && otheru->bus_master) {
 		atomic_inc(&otheru->addr->refcnt);
 		newu->addr = otheru->addr;
+		memcpy(addr->name, otheru->addr->name, otheru->addr->len);
+		spin_lock(&otheru->bus->lock);
+		atomic64_inc(&otheru->bus->addr_cnt);
+		addr->name->sbus_addr.s_addr =
+		       (atomic64_read(&otheru->bus->addr_cnt) & BUS_PREFIX_MASK);
+		hlist_add_head(&u->bus_node, &otheru->bus->peers);
+		spin_unlock(&otheru->bus->lock);
+		addr->len = addr_len;
+		addr->hash = bus_hash_fold(csum_partial(addr->name, addr->len, 0));
+		addr->sock = sk;
+		u->addr = addr;
+		u->bus = otheru->bus;
+		newu->bus = otheru->bus;
+		hlist_add_head(&addr->addr_node, &u->addr_list);
+		bus_insert_address(&bus_address_table[addr->hash], addr);
 	}
 	if (otheru->path.dentry) {
 		path_get(&otheru->path);
@@ -992,6 +1077,8 @@ out_unlock:
 
 out:
 	kfree_skb(skb);
+	if (addr)
+		bus_release_addr(addr);
 	if (newsk)
 		bus_release_sock(newsk, 0);
 	if (other)
@@ -1082,6 +1169,7 @@ static int bus_getname(struct socket *sock, struct sockaddr *uaddr, int *uaddr_l
 	}
 
 	u = bus_sk(sk);
+
 	bus_state_lock(sk);
 	if (!u->addr) {
 		sbusaddr->sbus_family = AF_BUS;

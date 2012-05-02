@@ -7,6 +7,8 @@
 #include <linux/mutex.h>
 #include <net/sock.h>
 
+#define BUS_PREFIX_MASK 0xffff
+
 extern void bus_inflight(struct file *fp);
 extern void bus_notinflight(struct file *fp);
 extern void bus_gc(void);
@@ -24,9 +26,10 @@ struct bus_address {
 	atomic_t	refcnt;
 	int		len;
 	unsigned	hash;
+	struct hlist_node addr_node;
+	struct hlist_node table_node;
+	struct sock  *sock;
 	struct sockaddr_bus name[0];
-	struct hlist_node node;
-	struct bus_sock  *sock;
 };
 
 struct bus_skb_parms {
@@ -49,7 +52,7 @@ struct bus_skb_parms {
 
 struct bus {
 	struct sock		*master;
-	struct hlist_head       *peers;
+	struct hlist_head       peers;
 	spinlock_t		lock;
 	atomic64_t              addr_cnt;
 };
