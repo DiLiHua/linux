@@ -132,26 +132,27 @@ static inline void bus_release_addr(struct bus_address *addr)
  *		- if started by zero, it is abstract name.
  */
 
-static int bus_mkname(struct sockaddr_un *sunaddr, int len, unsigned *hashp)
+static int bus_mkname(struct sockaddr_bus *sbusaddr, int len, unsigned *hashp)
 {
-	if (len <= sizeof(short) || len > sizeof(*sunaddr))
+	if (len <= sizeof(short) || len > sizeof(*sbusaddr))
 		return -EINVAL;
-	if (!sunaddr || sunaddr->sun_family != AF_BUS)
+	if (!sbusaddr || sbusaddr->sbus_family != AF_BUS)
 		return -EINVAL;
-	if (sunaddr->sun_path[0]) {
+	if (sbusaddr->sbus_path[0]) {
 		/*
 		 * This may look like an off by one error but it is a bit more
 		 * subtle. 108 is the longest valid AF_BUS path for a binding.
-		 * sun_path[108] doesn't as such exist.  However in kernel space
+		 * bus_path[108] doesn't as such exist.  However in kernel space
 		 * we are guaranteed that it is a valid memory location in our
 		 * kernel address buffer.
 		 */
-		((char *)sunaddr)[len] = 0;
-		len = strlen(sunaddr->sun_path)+1+sizeof(short);
+		((char *)sbusaddr)[len] = 0;
+		len = strlen(sbusaddr->sbus_path)+1+sizeof(short) +
+			sizeof(struct bus_addr);
 		return len;
 	}
 
-	*hashp = bus_hash_fold(csum_partial(sunaddr, len, 0));
+	*hashp = bus_hash_fold(csum_partial(sbusaddr, len, 0));
 	return len;
 }
 
@@ -181,7 +182,7 @@ static inline void bus_insert_socket(struct hlist_head *list, struct sock *sk)
 }
 
 static struct sock *__bus_find_socket_byname(struct net *net,
-					      struct sockaddr_un *sunname,
+					      struct sockaddr_bus *sbusname,
 					      int len, int type, unsigned hash)
 {
 	struct sock *s;
@@ -194,7 +195,7 @@ static struct sock *__bus_find_socket_byname(struct net *net,
 			continue;
 
 		if (u->addr->len == len &&
-		    !memcmp(u->addr->name, sunname, len))
+		    !memcmp(u->addr->name, sbusname, len))
 			goto found;
 	}
 	s = NULL;
@@ -203,14 +204,14 @@ found:
 }
 
 static inline struct sock *bus_find_socket_byname(struct net *net,
-						   struct sockaddr_un *sunname,
+						   struct sockaddr_bus *sbusname,
 						   int len, int type,
 						   unsigned hash)
 {
 	struct sock *s;
 
 	spin_lock(&bus_table_lock);
-	s = __bus_find_socket_byname(net, sunname, len, type, hash);
+	s = __bus_find_socket_byname(net, sbusname, len, type, hash);
 	if (s)
 		sock_hold(s);
 	spin_unlock(&bus_table_lock);
@@ -590,11 +591,11 @@ static int bus_autobind(struct socket *sock)
 	if (!addr)
 		goto out;
 
-	addr->name->sun_family = AF_BUS;
+	addr->name->sbus_family = AF_BUS;
 	atomic_set(&addr->refcnt, 1);
 
 retry:
-	addr->len = sprintf(addr->name->sun_path+1, "%05x", ordernum) + 1 + sizeof(short);
+	addr->len = sprintf(addr->name->sbus_path+1, "%05x", ordernum) + 1 + sizeof(short);
 	addr->hash = bus_hash_fold(csum_partial(addr->name, addr->len, 0));
 
 	spin_lock(&bus_table_lock);
@@ -629,16 +630,16 @@ out:	mutex_unlock(&u->readlock);
 }
 
 static struct sock *bus_find_other(struct net *net,
-				    struct sockaddr_un *sunname, int len,
+				    struct sockaddr_bus *sbusname, int len,
 				    int type, unsigned hash, int *error)
 {
 	struct sock *u;
 	struct path path;
 	int err = 0;
 
-	if (sunname->sun_path[0]) {
+	if (sbusname->sbus_path[0]) {
 		struct inode *inode;
-		err = kern_path(sunname->sun_path, LOOKUP_FOLLOW, &path);
+		err = kern_path(sbusname->sbus_path, LOOKUP_FOLLOW, &path);
 		if (err)
 			goto fail;
 		inode = path.dentry->d_inode;
@@ -665,7 +666,7 @@ static struct sock *bus_find_other(struct net *net,
 		}
 	} else {
 		err = -ECONNREFUSED;
-		u = bus_find_socket_byname(net, sunname, len, type, hash);
+		u = bus_find_socket_byname(net, sbusname, len, type, hash);
 		if (u) {
 			struct dentry *dentry;
 			dentry = bus_sk(u)->path.dentry;
@@ -689,8 +690,8 @@ static int bus_bind(struct socket *sock, struct sockaddr *uaddr, int addr_len)
 	struct sock *sk = sock->sk;
 	struct net *net = sock_net(sk);
 	struct bus_sock *u = bus_sk(sk);
-	struct sockaddr_un *sunaddr = (struct sockaddr_un *)uaddr;
-	char *sun_path = sunaddr->sun_path;
+	struct sockaddr_bus *sbusaddr = (struct sockaddr_bus *)uaddr;
+	char *sbus_path = sbusaddr->sbus_path;
 	struct dentry *dentry = NULL;
 	struct path path;
 	int err;
@@ -699,7 +700,7 @@ static int bus_bind(struct socket *sock, struct sockaddr *uaddr, int addr_len)
 	struct hlist_head *list;
 
 	err = -EINVAL;
-	if (sunaddr->sun_family != AF_BUS)
+	if (sbusaddr->sbus_family != AF_BUS)
 		goto out;
 
 	if (addr_len == sizeof(short)) {
@@ -707,7 +708,7 @@ static int bus_bind(struct socket *sock, struct sockaddr *uaddr, int addr_len)
 		goto out;
 	}
 
-	err = bus_mkname(sunaddr, addr_len, &hash);
+	err = bus_mkname(sbusaddr, addr_len, &hash);
 	if (err < 0)
 		goto out;
 	addr_len = err;
@@ -723,19 +724,19 @@ static int bus_bind(struct socket *sock, struct sockaddr *uaddr, int addr_len)
 	if (!addr)
 		goto out_up;
 
-	memcpy(addr->name, sunaddr, addr_len);
+	memcpy(addr->name, sbusaddr, addr_len);
 	addr->len = addr_len;
 	addr->hash = hash ^ sk->sk_type;
 	atomic_set(&addr->refcnt, 1);
 
-	if (sun_path[0]) {
+	if (sbus_path[0]) {
 		umode_t mode;
 		err = 0;
 		/*
 		 * Get the parent directory, calculate the hash for last
 		 * component.
 		 */
-		dentry = kern_path_create(AT_FDCWD, sun_path, &path, 0);
+		dentry = kern_path_create(AT_FDCWD, sbus_path, &path, 0);
 		err = PTR_ERR(dentry);
 		if (IS_ERR(dentry))
 			goto out_mknod_parent;
@@ -765,9 +766,9 @@ out_mknod_drop_write:
 
 	spin_lock(&bus_table_lock);
 
-	if (!sun_path[0]) {
+	if (!sbus_path[0]) {
 		err = -EADDRINUSE;
-		if (__bus_find_socket_byname(net, sunaddr, addr_len,
+		if (__bus_find_socket_byname(net, sbusaddr, addr_len,
 					      sk->sk_type, hash)) {
 			bus_release_addr(addr);
 			goto out_unlock;
@@ -826,7 +827,7 @@ static long bus_wait_for_peer(struct sock *other, long timeo)
 static int bus_stream_connect(struct socket *sock, struct sockaddr *uaddr,
 			       int addr_len, int flags)
 {
-	struct sockaddr_un *sunaddr = (struct sockaddr_un *)uaddr;
+	struct sockaddr_bus *sbusaddr = (struct sockaddr_bus *)uaddr;
 	struct sock *sk = sock->sk;
 	struct net *net = sock_net(sk);
 	struct bus_sock *u = bus_sk(sk), *newu, *otheru;
@@ -838,7 +839,7 @@ static int bus_stream_connect(struct socket *sock, struct sockaddr *uaddr,
 	int err;
 	long timeo;
 
-	err = bus_mkname(sunaddr, addr_len, &hash);
+	err = bus_mkname(sbusaddr, addr_len, &hash);
 	if (err < 0)
 		goto out;
 	addr_len = err;
@@ -868,7 +869,7 @@ static int bus_stream_connect(struct socket *sock, struct sockaddr *uaddr,
 
 restart:
 	/*  Find listening sock. */
-	other = bus_find_other(net, sunaddr, addr_len, sk->sk_type, hash, &err);
+	other = bus_find_other(net, sbusaddr, addr_len, sk->sk_type, hash, &err);
 	if (!other)
 		goto out;
 
@@ -1066,7 +1067,7 @@ static int bus_getname(struct socket *sock, struct sockaddr *uaddr, int *uaddr_l
 {
 	struct sock *sk = sock->sk;
 	struct bus_sock *u;
-	DECLARE_SOCKADDR(struct sockaddr_un *, sunaddr, uaddr);
+	DECLARE_SOCKADDR(struct sockaddr_bus *, sbusaddr, uaddr);
 	int err = 0;
 
 	if (peer) {
@@ -1083,14 +1084,14 @@ static int bus_getname(struct socket *sock, struct sockaddr *uaddr, int *uaddr_l
 	u = bus_sk(sk);
 	bus_state_lock(sk);
 	if (!u->addr) {
-		sunaddr->sun_family = AF_BUS;
-		sunaddr->sun_path[0] = 0;
+		sbusaddr->sbus_family = AF_BUS;
+		sbusaddr->sbus_path[0] = 0;
 		*uaddr_len = sizeof(short);
 	} else {
 		struct bus_address *addr = u->addr;
 
 		*uaddr_len = addr->len;
-		memcpy(sunaddr, addr->name, *uaddr_len);
+		memcpy(sbusaddr, addr->name, *uaddr_len);
 	}
 	bus_state_unlock(sk);
 	sock_put(sk);
@@ -1204,7 +1205,7 @@ static int bus_dgram_sendmsg(struct kiocb *kiocb, struct socket *sock,
 	struct sock *sk = sock->sk;
 	struct net *net = sock_net(sk);
 	struct bus_sock *u = bus_sk(sk);
-	struct sockaddr_un *sunaddr = msg->msg_name;
+	struct sockaddr_bus *sbusaddr = msg->msg_name;
 	struct sock *other = NULL;
 	int namelen = 0; /* fake GCC */
 	int err;
@@ -1226,12 +1227,12 @@ static int bus_dgram_sendmsg(struct kiocb *kiocb, struct socket *sock,
 		goto out;
 
 	if (msg->msg_namelen) {
-		err = bus_mkname(sunaddr, msg->msg_namelen, &hash);
+		err = bus_mkname(sbusaddr, msg->msg_namelen, &hash);
 		if (err < 0)
 			goto out;
 		namelen = err;
 	} else {
-		sunaddr = NULL;
+		sbusaddr = NULL;
 		err = -ENOTCONN;
 		other = bus_peer_get(sk);
 		if (!other)
@@ -1266,10 +1267,10 @@ static int bus_dgram_sendmsg(struct kiocb *kiocb, struct socket *sock,
 restart:
 	if (!other) {
 		err = -ECONNRESET;
-		if (sunaddr == NULL)
+		if (sbusaddr == NULL)
 			goto out_free;
 
-		other = bus_find_other(net, sunaddr, namelen, sk->sk_type,
+		other = bus_find_other(net, sbusaddr, namelen, sk->sk_type,
 					hash, &err);
 		if (other == NULL)
 			goto out_free;
@@ -1760,7 +1761,7 @@ static int bus_seq_show(struct seq_file *seq, void *v)
 				i++;
 			}
 			for ( ; i < len; i++)
-				seq_putc(seq, u->addr->name->sun_path[i]);
+				seq_putc(seq, u->addr->name->sbus_path[i]);
 		}
 		bus_state_unlock(s);
 		seq_putc(seq, '\n');
