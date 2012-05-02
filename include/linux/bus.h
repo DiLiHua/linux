@@ -3,6 +3,8 @@
 
 #include <linux/socket.h>
 
+#define BUS_PATH_MAX	108
+
 /* Bus address */
 struct bus_addr {
 	u64 s_addr; /* 16-bit prefix + 48-bit client address */
@@ -11,7 +13,7 @@ struct bus_addr {
 /* Structure describing an AF_BUS socket address. */
 struct sockaddr_bus {
 	__kernel_sa_family_t sbus_family; /* AF_BUS */
-	u64                  sbus_scope;  /* scope */
+	char sbus_path[BUS_PATH_MAX];  /* pathname */
 	struct bus_addr      sbus_addr;   /* bus address */
 };
 
