@@ -98,11 +98,6 @@ static inline int bus_our_peer(struct sock *sk, struct sock *osk)
 	return bus_peer(osk) == sk;
 }
 
-static inline int bus_may_send(struct sock *sk, struct sock *osk)
-{
-	return bus_peer(osk) == NULL || bus_our_peer(sk, osk);
-}
-
 static inline int bus_recvq_full(struct sock const *sk)
 {
 	return skb_queue_len(&sk->sk_receive_queue) > sk->sk_max_ack_backlog;
@@ -148,10 +143,9 @@ static int bus_mkname(struct sockaddr_bus *sbusaddr, int len, unsigned *hashp)
 		 * we are guaranteed that it is a valid memory location in our
 		 * kernel address buffer.
 		 */
-//		((char *)sbusaddr)[len] = 0;
-		len = strlen(sbusaddr->sbus_path)+1+sizeof(short) +
+		len = strlen(sbusaddr->sbus_path) + 1 +
+			sizeof(__kernel_sa_family_t) +
 			sizeof(struct bus_addr);
-		return len;
 	}
 
 	*hashp = bus_hash_fold(csum_partial(sbusaddr, len, 0));
@@ -246,24 +240,50 @@ static inline struct sock *bus_find_socket_byname(struct net *net,
 	return s;
 }
 
-static struct sock *bus_find_socket_byinode(struct inode *i)
+static struct sock *__bus_find_socket_byaddress(struct net *net,
+					      struct sockaddr_bus *sbusname,
+					      int len, int type, unsigned hash)
 {
 	struct sock *s;
+	struct bus_address *addr;
 	struct hlist_node *node;
+	struct bus_sock *u;
 
-	spin_lock(&bus_table_lock);
-	sk_for_each(s, node,
-		    &bus_socket_table[i->i_ino & (BUS_HASH_SIZE - 1)]) {
-		struct dentry *dentry = bus_sk(s)->path.dentry;
+	len = strlen(sbusname->sbus_path) + 1 +
+		sizeof(__kernel_sa_family_t) +
+		sizeof(struct bus_addr);
 
-		if (dentry && dentry->d_inode == i) {
-			sock_hold(s);
+	hash = bus_hash_fold(csum_partial(sbusname, len, 0)) ^ type;
+
+	hlist_for_each_entry(addr, node, &bus_address_table[hash],
+			     table_node) {
+		s = addr->sock;
+		u = bus_sk(s);
+
+		if (!net_eq(sock_net(s), net))
+			continue;
+
+		if (addr->len == len &&
+		    !memcmp(addr->name, sbusname, addr->len))
 			goto found;
-		}
 	}
 	s = NULL;
 found:
-	spin_unlock(&bus_table_lock);
+	return s;
+}
+
+static inline struct sock *bus_find_socket_byaddress(struct net *net,
+						   struct sockaddr_bus *sbusname,
+						   int len, int type,
+						   unsigned hash)
+{
+	struct sock *s;
+
+	spin_lock(&bus_address_lock);
+	s = __bus_find_socket_byaddress(net, sbusname, len, type, hash);
+	if (s)
+		sock_hold(s);
+	spin_unlock(&bus_address_lock);
 	return s;
 }
 
@@ -615,65 +635,6 @@ static int bus_release(struct socket *sock)
 	return bus_release_sock(sk, 0);
 }
 
-static int bus_autobind(struct socket *sock)
-{
-	struct sock *sk = sock->sk;
-	struct net *net = sock_net(sk);
-	struct bus_sock *u = bus_sk(sk);
-	static u32 ordernum = 1;
-	struct bus_address *addr;
-	int err;
-	unsigned int retries = 0;
-
-	mutex_lock(&u->readlock);
-
-	err = 0;
-	if (u->addr)
-		goto out;
-
-	err = -ENOMEM;
-	addr = kzalloc(sizeof(*addr) + sizeof(short) + 16, GFP_KERNEL);
-	if (!addr)
-		goto out;
-
-	addr->name->sbus_family = AF_BUS;
-	atomic_set(&addr->refcnt, 1);
-
-retry:
-	addr->len = sprintf(addr->name->sbus_path+1, "%05x", ordernum) + 1 + sizeof(short);
-	addr->hash = bus_hash_fold(csum_partial(addr->name, addr->len, 0));
-
-	spin_lock(&bus_table_lock);
-	ordernum = (ordernum+1)&0xFFFFF;
-
-	if (__bus_find_socket_byname(net, addr->name, addr->len, sock->type,
-				      addr->hash)) {
-		spin_unlock(&bus_table_lock);
-		/*
-		 * __bus_find_socket_byname() may take long time if many names
-		 * are already in use.
-		 */
-		cond_resched();
-		/* Give up if all names seems to be in use. */
-		if (retries++ == 0xFFFFF) {
-			err = -ENOSPC;
-			kfree(addr);
-			goto out;
-		}
-		goto retry;
-	}
-	addr->hash ^= sk->sk_type;
-
-	__bus_remove_socket(sk);
-	u->addr = addr;
-	__bus_insert_socket(&bus_socket_table[addr->hash], sk);
-	spin_unlock(&bus_table_lock);
-	err = 0;
-
-out:	mutex_unlock(&u->readlock);
-	return err;
-}
-
 static struct sock *bus_find_other(struct net *net,
 				    struct sockaddr_bus *sbusname, int len,
 				    int type, unsigned hash, int *error)
@@ -695,7 +656,7 @@ static struct sock *bus_find_other(struct net *net,
 		err = -ECONNREFUSED;
 		if (!S_ISSOCK(inode->i_mode))
 			goto put_fail;
-		u = bus_find_socket_byinode(inode);
+		u = bus_find_socket_byaddress(net, sbusname, len, type, hash);
 		if (!u)
 			goto put_fail;
 
@@ -711,7 +672,7 @@ static struct sock *bus_find_other(struct net *net,
 		}
 	} else {
 		err = -ECONNREFUSED;
-		u = bus_find_socket_byname(net, sbusname, len, type, hash);
+		u = bus_find_socket_byaddress(net, sbusname, len, type, hash);
 		if (u) {
 			struct dentry *dentry;
 			dentry = bus_sk(u)->path.dentry;
@@ -720,6 +681,7 @@ static struct sock *bus_find_other(struct net *net,
 		} else
 			goto fail;
 	}
+
 	return u;
 
 put_fail:
@@ -768,7 +730,7 @@ static int bus_bind(struct socket *sock, struct sockaddr *uaddr, int addr_len)
 	if (!addr)
 		goto out_up;
 
-	memcpy(addr->name, sbusaddr, addr_len);
+	memcpy(addr->name, sbusaddr, sizeof(struct sockaddr_bus));
 	addr->len = addr_len;
 	addr->hash = hash ^ sk->sk_type;
 	atomic_set(&addr->refcnt, 1);
@@ -807,8 +769,6 @@ out_mknod_drop_write:
 		mutex_unlock(&path.dentry->d_inode->i_mutex);
 		dput(path.dentry);
 		path.dentry = dentry;
-
-		addr->hash = BUS_HASH_SIZE;
 	}
 
 	spin_lock(&bus_table_lock);
@@ -846,7 +806,6 @@ out_mknod_drop_write:
 	u->bus_master = true;
 	u->bus = bus;
 	__bus_insert_socket(list, sk);
-
 	bus_insert_address(&bus_address_table[addr->hash], addr);
 
 out_unlock:
@@ -1029,20 +988,24 @@ restart:
 	if (otheru->addr && otheru->bus_master) {
 		atomic_inc(&otheru->addr->refcnt);
 		newu->addr = otheru->addr;
-		memcpy(addr->name, otheru->addr->name, otheru->addr->len);
+		memcpy(addr->name, otheru->addr->name, sizeof(struct sockaddr_bus));
+		addr->len = otheru->addr->len;
 		spin_lock(&otheru->bus->lock);
 		atomic64_inc(&otheru->bus->addr_cnt);
 		addr->name->sbus_addr.s_addr =
 		       (atomic64_read(&otheru->bus->addr_cnt) & BUS_PREFIX_MASK);
 		hlist_add_head(&u->bus_node, &otheru->bus->peers);
 		spin_unlock(&otheru->bus->lock);
-		addr->len = addr_len;
-		addr->hash = bus_hash_fold(csum_partial(addr->name, addr->len, 0));
+		addr->hash =
+			bus_hash_fold(csum_partial(addr->name, addr->len, 0))
+			^ sk->sk_type;
 		addr->sock = sk;
 		u->addr = addr;
 		u->bus = otheru->bus;
 		newu->bus = otheru->bus;
+
 		hlist_add_head(&addr->addr_node, &u->addr_list);
+
 		bus_insert_address(&bus_address_table[addr->hash], addr);
 	}
 	if (otheru->path.dentry) {
@@ -1178,7 +1141,7 @@ static int bus_getname(struct socket *sock, struct sockaddr *uaddr, int *uaddr_l
 	} else {
 		struct bus_address *addr = u->addr;
 
-		*uaddr_len = addr->len;
+		*uaddr_len = sizeof(struct sockaddr_bus);
 		memcpy(sbusaddr, addr->name, *uaddr_len);
 	}
 	bus_state_unlock(sk);
@@ -1292,7 +1255,6 @@ static int bus_dgram_sendmsg(struct kiocb *kiocb, struct socket *sock,
 	struct sock_iocb *siocb = kiocb_to_siocb(kiocb);
 	struct sock *sk = sock->sk;
 	struct net *net = sock_net(sk);
-	struct bus_sock *u = bus_sk(sk);
 	struct sockaddr_bus *sbusaddr = msg->msg_name;
 	struct sock *other = NULL;
 	int namelen = 0; /* fake GCC */
@@ -1327,10 +1289,6 @@ static int bus_dgram_sendmsg(struct kiocb *kiocb, struct socket *sock,
 			goto out;
 	}
 
-	if (test_bit(SOCK_PASSCRED, &sock->flags) && !u->addr
-	    && (err = bus_autobind(sock)) != 0)
-		goto out;
-
 	err = -EMSGSIZE;
 	if (len > sk->sk_sndbuf - 32)
 		goto out;
@@ -1360,6 +1318,7 @@ restart:
 
 		other = bus_find_other(net, sbusaddr, namelen, sk->sk_type,
 					hash, &err);
+
 		if (other == NULL)
 			goto out_free;
 	}
@@ -1371,9 +1330,6 @@ restart:
 	}
 
 	bus_state_lock(other);
-	err = -EPERM;
-	if (!bus_may_send(sk, other))
-		goto out_unlock;
 
 	if (sock_flag(other, SOCK_DEAD)) {
 		/*
@@ -1463,9 +1419,6 @@ static int bus_seqpacket_sendmsg(struct kiocb *kiocb, struct socket *sock,
 	if (sk->sk_state != TCP_ESTABLISHED)
 		return -ENOTCONN;
 
-	if (msg->msg_namelen)
-		msg->msg_namelen = 0;
-
 	return bus_dgram_sendmsg(kiocb, sock, msg, len);
 }
 
@@ -1488,7 +1441,8 @@ static void bus_copy_addr(struct msghdr *msg, struct sock *sk)
 	msg->msg_namelen = 0;
 	if (u->addr) {
 		msg->msg_namelen = u->addr->len;
-		memcpy(msg->msg_name, u->addr->name, u->addr->len);
+		memcpy(msg->msg_name, u->addr->name,
+		       sizeof(struct sockaddr_bus));
 	}
 }
 
