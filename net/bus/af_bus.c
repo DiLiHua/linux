@@ -148,7 +148,9 @@ static int bus_mkname(struct sockaddr_bus *sbusaddr, int len, unsigned *hashp)
 			sizeof(struct bus_addr);
 	}
 
-	*hashp = bus_hash_fold(csum_partial(sbusaddr, len, 0));
+	*hashp = (bus_hash_fold(csum_partial(sbusaddr->sbus_path,
+					     strlen(sbusaddr->sbus_path), 0))
+		  ^ sbusaddr->sbus_addr.s_addr);
 	return len;
 }
 
@@ -252,8 +254,6 @@ static struct sock *__bus_find_socket_byaddress(struct net *net,
 	len = strlen(sbusname->sbus_path) + 1 +
 		sizeof(__kernel_sa_family_t) +
 		sizeof(struct bus_addr);
-
-	hash = bus_hash_fold(csum_partial(sbusname, len, 0)) ^ type;
 
 	hlist_for_each_entry(addr, node, &bus_address_table[hash],
 			     table_node) {
@@ -732,7 +732,7 @@ static int bus_bind(struct socket *sock, struct sockaddr *uaddr, int addr_len)
 
 	memcpy(addr->name, sbusaddr, sizeof(struct sockaddr_bus));
 	addr->len = addr_len;
-	addr->hash = hash ^ sk->sk_type;
+	addr->hash = hash;
 	atomic_set(&addr->refcnt, 1);
 	addr->sock = sk;
 	INIT_HLIST_NODE(&addr->addr_node);
@@ -1000,8 +1000,10 @@ restart:
 		hlist_add_head(&u->bus_node, &otheru->bus->peers);
 		spin_unlock(&otheru->bus->lock);
 		addr->hash =
-			bus_hash_fold(csum_partial(addr->name, addr->len, 0))
-			^ sk->sk_type;
+			(bus_hash_fold(csum_partial(addr->name->sbus_path,
+						    strlen(sbusaddr->sbus_path),
+						    0))
+			 ^ addr->name->sbus_addr.s_addr);
 		addr->sock = sk;
 		u->addr = addr;
 		u->bus = otheru->bus;
