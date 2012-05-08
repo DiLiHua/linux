@@ -511,6 +511,8 @@ static unsigned int bus_dgram_poll(struct file *, struct socket *,
 				    poll_table *);
 static int bus_ioctl(struct socket *, unsigned int, unsigned long);
 static int bus_shutdown(struct socket *, int);
+static int bus_setsockopt(struct socket *, int, int, char __user *,
+			   unsigned int);
 static int bus_dgram_sendmsg(struct kiocb *, struct socket *,
 			      struct msghdr *, size_t);
 static int bus_dgram_recvmsg(struct kiocb *, struct socket *,
@@ -542,7 +544,7 @@ static const struct proto_ops bus_seqpacket_ops = {
 	.ioctl =	bus_ioctl,
 	.listen =	bus_listen,
 	.shutdown =	bus_shutdown,
-	.setsockopt =	sock_no_setsockopt,
+	.setsockopt =	bus_setsockopt,
 	.getsockopt =	sock_no_getsockopt,
 	.sendmsg =	bus_seqpacket_sendmsg,
 	.recvmsg =	bus_seqpacket_recvmsg,
@@ -1593,6 +1595,73 @@ static int bus_shutdown(struct socket *sock, int mode)
 		sock_put(other);
 
 	return 0;
+}
+
+static int bus_add_addr(struct sock *sk, struct bus_addr *sbus_addr)
+{
+	struct bus_address *addr;
+	struct sock *other;
+	struct bus_sock *u = bus_sk(sk);
+	struct net *net = sock_net(sk);
+
+	addr = kzalloc(sizeof(*addr) + sizeof(struct sockaddr_bus), GFP_KERNEL);
+	if (!addr)
+		return -ENOMEM;
+
+	memcpy(addr->name, u->addr->name, sizeof(struct sockaddr_bus));
+	addr->len = u->addr->len;
+
+	addr->name->sbus_addr.s_addr = sbus_addr->s_addr;
+	addr->hash = (bus_hash_fold(csum_partial(addr->name->sbus_path,
+						 strlen(addr->name->sbus_path),
+						 0))
+		      ^ addr->name->sbus_addr.s_addr);
+
+	other = bus_find_socket_byaddress(net, addr->name, addr->len,
+					  sk->sk_type, addr->hash);
+
+	if (other) {
+		sock_put(other);
+		bus_release_addr(addr);
+		return -EADDRINUSE;
+	}
+
+	atomic_set(&addr->refcnt, 1);
+	INIT_HLIST_NODE(&addr->addr_node);
+	INIT_HLIST_NODE(&addr->table_node);
+
+	addr->sock = sk;
+
+	hlist_add_head(&addr->addr_node, &u->addr_list);
+	bus_insert_address(&bus_address_table[addr->hash], addr);
+
+	return 0;
+}
+
+static int bus_setsockopt(struct socket *sock, int level, int optname,
+			   char __user *optval, unsigned int optlen)
+{
+	struct bus_addr addr;
+	int res;
+
+	if (level != SOL_BUS)
+		return -ENOPROTOOPT;
+
+	switch (optname) {
+	case BUS_ADD_ADDR:
+		if (optlen < sizeof(struct bus_addr))
+			return -EINVAL;
+		if (copy_from_user(&addr, optval, sizeof(struct bus_addr)))
+			return -EFAULT;
+
+		res = bus_add_addr(bus_peer_get(sock->sk), &addr);
+		break;
+	default:
+		res = -EINVAL;
+		break;
+	}
+
+	return res;
 }
 
 long bus_inq_len(struct sock *sk)

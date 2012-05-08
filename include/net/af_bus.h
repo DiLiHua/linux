@@ -7,8 +7,6 @@
 #include <linux/mutex.h>
 #include <net/sock.h>
 
-#define BUS_PREFIX_MASK 0xffff
-
 extern void bus_inflight(struct file *fp);
 extern void bus_notinflight(struct file *fp);
 extern void bus_gc(void);
@@ -17,6 +15,10 @@ extern struct sock *bus_get_socket(struct file *filp);
 extern struct sock *bus_peer_get(struct sock *);
 
 #define BUS_HASH_SIZE	256
+#define BUS_PREFIX_MASK 0xffff
+
+/* AF_BUS socket options */
+#define BUS_ADD_ADDR 1
 
 extern unsigned int bus_tot_inflight;
 extern spinlock_t bus_table_lock;
