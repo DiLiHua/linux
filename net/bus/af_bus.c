@@ -250,10 +250,10 @@ static struct sock *__bus_find_socket_byaddress(struct net *net,
 	struct bus_address *addr;
 	struct hlist_node *node;
 	struct bus_sock *u;
+	int path_len = strlen(sbusname->sbus_path);
 
-	len = strlen(sbusname->sbus_path) + 1 +
-		sizeof(__kernel_sa_family_t) +
-		sizeof(struct bus_addr);
+	len = path_len + 1 + sizeof(__kernel_sa_family_t) +
+	      sizeof(struct bus_addr);
 
 	hlist_for_each_entry(addr, node, &bus_address_table[hash],
 			     table_node) {
@@ -267,7 +267,7 @@ static struct sock *__bus_find_socket_byaddress(struct net *net,
 		    addr->name->sbus_family == sbusname->sbus_family &&
 		    addr->name->sbus_addr.s_addr == sbusname->sbus_addr.s_addr &&
 		    !memcmp(addr->name->sbus_path, sbusname->sbus_path,
-			   strlen(sbusname->sbus_path)))
+			   path_len))
 			goto found;
 	}
 	s = NULL;
