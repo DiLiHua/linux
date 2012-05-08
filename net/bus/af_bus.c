@@ -264,7 +264,10 @@ static struct sock *__bus_find_socket_byaddress(struct net *net,
 			continue;
 
 		if (addr->len == len &&
-		    !memcmp(addr->name, sbusname, addr->len))
+		    addr->name->sbus_family == sbusname->sbus_family &&
+		    addr->name->sbus_addr.s_addr == sbusname->sbus_addr.s_addr &&
+		    !memcmp(addr->name->sbus_path, sbusname->sbus_path,
+			   strlen(sbusname->sbus_path)))
 			goto found;
 	}
 	s = NULL;
