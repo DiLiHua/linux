@@ -863,6 +863,9 @@ static int bus_stream_connect(struct socket *sock, struct sockaddr *uaddr,
 	int err;
 	long timeo;
 
+	/* Only connect to the bus master is allowed */
+	sbusaddr->sbus_addr.s_addr = 0x0;
+
 	err = bus_mkname(sbusaddr, addr_len, &hash);
 	if (err < 0)
 		goto out;
