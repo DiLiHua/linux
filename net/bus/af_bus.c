@@ -1609,6 +1609,7 @@ static int bus_add_addr(struct sock *sk, struct bus_addr *sbus_addr)
 	struct sock *other;
 	struct bus_sock *u = bus_sk(sk);
 	struct net *net = sock_net(sk);
+	int ret = 0;
 
 	addr = kzalloc(sizeof(*addr) + sizeof(struct sockaddr_bus), GFP_KERNEL);
 	if (!addr)
@@ -1629,7 +1630,8 @@ static int bus_add_addr(struct sock *sk, struct bus_addr *sbus_addr)
 	if (other) {
 		sock_put(other);
 		bus_release_addr(addr);
-		return -EADDRINUSE;
+		ret = -EADDRINUSE;
+		goto out;
 	}
 
 	atomic_set(&addr->refcnt, 1);
@@ -1641,7 +1643,10 @@ static int bus_add_addr(struct sock *sk, struct bus_addr *sbus_addr)
 	hlist_add_head(&addr->addr_node, &u->addr_list);
 	bus_insert_address(&bus_address_table[addr->hash], addr);
 
-	return 0;
+out:
+	sock_put(sk);
+
+	return ret;
 }
 
 static int bus_setsockopt(struct socket *sock, int level, int optname,
