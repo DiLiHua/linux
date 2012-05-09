@@ -736,7 +736,7 @@ static int bus_bind(struct socket *sock, struct sockaddr *uaddr, int addr_len)
 		goto out_up;
 
 	err = -ENOMEM;
-	addr = kzalloc(sizeof(*addr) + addr_len, GFP_KERNEL);
+	addr = kzalloc(sizeof(*addr) + sizeof(struct sockaddr_bus), GFP_KERNEL);
 	if (!addr)
 		goto out_up;
 
