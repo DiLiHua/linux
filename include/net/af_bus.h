@@ -78,6 +78,7 @@ struct bus_sock {
 	struct socket_wq	peer_wq;
 	struct bus              *bus;
 	bool                    bus_master;
+	bool                    bus_master_side;
 	bool                    authenticated;
 	struct hlist_node	bus_node;
 };

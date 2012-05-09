@@ -345,9 +345,6 @@ static void bus_sock_destructor(struct sock *sk)
 		return;
 	}
 
-	if (u->addr)
-		bus_release_addr(u->addr);
-
 	atomic_long_dec(&bus_nr_socks);
 	local_bh_disable();
 	sock_prot_inuse_add(sock_net(sk), sk->sk_prot, -1);
@@ -387,12 +384,20 @@ static int bus_release_sock(struct sock *sk, int embrion)
 			spin_unlock(&u->bus->lock);
 	}
 
-	spin_lock(&bus_address_lock);
-	hlist_for_each_entry_safe(addr, node, tmp, &u->addr_list, addr_node) {
-		hlist_del(&addr->addr_node);
-		__bus_remove_address(addr);
+	if (u->bus_master_side) {
+		bus_release_addr(u->addr);
+		u->addr = NULL;
+	} else {
+		u->addr = NULL;
+
+		spin_lock(&bus_address_lock);
+		hlist_for_each_entry_safe(addr, node, tmp, &u->addr_list, addr_node) {
+			hlist_del(&addr->addr_node);
+			__bus_remove_address(addr);
+			bus_release_addr(addr);
+		}
+		spin_unlock(&bus_address_lock);
 	}
-	spin_unlock(&bus_address_lock);
 
 	bus_state_unlock(sk);
 
@@ -1012,8 +1017,9 @@ restart:
 		addr->sock = sk;
 		u->addr = addr;
 		u->bus = otheru->bus;
+		u->bus_master_side = false;
 		newu->bus = otheru->bus;
-
+		newu->bus_master_side = true;
 		hlist_add_head(&addr->addr_node, &u->addr_list);
 
 		bus_insert_address(&bus_address_table[addr->hash], addr);
