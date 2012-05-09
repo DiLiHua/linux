@@ -1335,8 +1335,17 @@ restart:
 		other = bus_find_other(net, sbusaddr, namelen, sk->sk_type,
 					hash, &err);
 
-		if (other == NULL)
-			goto out_free;
+		if (other == NULL) {
+			if (!bus_sk(sk)->bus_master_side) {
+				err = -ENOTCONN;
+				other = bus_peer_get(sk);
+				if (!other)
+					goto out_free;
+			} else {
+				other = sk;
+				sock_hold(other);
+			}
+		}
 	}
 
 	if (sk_filter(other, skb) < 0) {
