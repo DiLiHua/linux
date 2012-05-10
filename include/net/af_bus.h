@@ -15,7 +15,11 @@ extern struct sock *bus_get_socket(struct file *filp);
 extern struct sock *bus_peer_get(struct sock *);
 
 #define BUS_HASH_SIZE	256
-#define BUS_PREFIX_MASK 0xffff
+#define BUS_MASTER_ADDR 0x0
+#define BUS_PREFIX_BITS 16
+#define BUS_CLIENT_BITS 48
+#define BUS_PREFIX_MASK 0xffff000000000000
+#define BUS_CLIENT_MASK 0x0000ffffffffffff
 
 /* AF_BUS socket options */
 #define BUS_ADD_ADDR 1
