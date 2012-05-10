@@ -23,6 +23,7 @@ extern struct sock *bus_peer_get(struct sock *);
 
 /* AF_BUS socket options */
 #define BUS_ADD_ADDR 1
+#define BUS_JOIN_BUS 2
 
 extern unsigned int bus_tot_inflight;
 extern spinlock_t bus_table_lock;

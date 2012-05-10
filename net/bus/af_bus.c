@@ -721,7 +721,7 @@ static int bus_bind(struct socket *sock, struct sockaddr *uaddr, int addr_len)
 		goto out;
 
 	/* If the address is available, the socket is the bus master */
-	sbusaddr->sbus_addr.s_addr = 0x0;
+	sbusaddr->sbus_addr.s_addr = BUS_MASTER_ADDR;
 
 	err = bus_mkname(sbusaddr, addr_len, &hash);
 	if (err < 0)
@@ -873,7 +873,7 @@ static int bus_stream_connect(struct socket *sock, struct sockaddr *uaddr,
 	long timeo;
 
 	/* Only connect to the bus master is allowed */
-	sbusaddr->sbus_addr.s_addr = 0x0;
+	sbusaddr->sbus_addr.s_addr = BUS_MASTER_ADDR;
 
 	err = bus_mkname(sbusaddr, addr_len, &hash);
 	if (err < 0)
@@ -1006,7 +1006,6 @@ restart:
 		atomic64_inc(&otheru->bus->addr_cnt);
 		addr->name->sbus_addr.s_addr =
 			(atomic64_read(&otheru->bus->addr_cnt) & BUS_CLIENT_MASK);
-		hlist_add_head(&u->bus_node, &otheru->bus->peers);
 		spin_unlock(&otheru->bus->lock);
 		addr->hash =
 			bus_hash_fold(csum_partial(addr->name->sbus_path,
@@ -1269,6 +1268,7 @@ static int bus_dgram_sendmsg(struct kiocb *kiocb, struct socket *sock,
 	struct sock_iocb *siocb = kiocb_to_siocb(kiocb);
 	struct sock *sk = sock->sk;
 	struct net *net = sock_net(sk);
+	struct bus_sock *u = bus_sk(sk);
 	struct sockaddr_bus *sbusaddr = msg->msg_name;
 	struct sock *other = NULL;
 	int namelen = 0; /* fake GCC */
@@ -1278,6 +1278,12 @@ static int bus_dgram_sendmsg(struct kiocb *kiocb, struct socket *sock,
 	long timeo;
 	struct scm_cookie tmp_scm;
 	int max_level;
+	bool to_master = false;
+
+	if (sbusaddr && sbusaddr->sbus_addr.s_addr == BUS_MASTER_ADDR)
+		to_master = true;
+	else if (sbusaddr && !u->bus_master_side && !u->authenticated)
+		return -EHOSTUNREACH;
 
 	if (NULL == siocb->scm)
 		siocb->scm = &tmp_scm;
@@ -1290,7 +1296,7 @@ static int bus_dgram_sendmsg(struct kiocb *kiocb, struct socket *sock,
 	if (msg->msg_flags&MSG_OOB)
 		goto out;
 
-	if (msg->msg_namelen) {
+	if (msg->msg_namelen && !to_master) {
 		err = bus_mkname(sbusaddr, msg->msg_namelen, &hash);
 		if (err < 0)
 			goto out;
@@ -1654,6 +1660,42 @@ out:
 	return ret;
 }
 
+static int bus_join_bus(struct sock *sk)
+{
+	struct sock *peer;
+	struct bus_sock *u = bus_sk(sk), *peeru;
+	int err = 0;
+
+	if (!u->bus_master_side)
+		return -EINVAL;
+
+	if (sk->sk_state != TCP_ESTABLISHED)
+		return -ENOTCONN;
+
+	peer = bus_peer_get(sk);
+	if (!peer)
+		return -ENOTCONN;
+
+	if (peer->sk_shutdown != 0) {
+		err = -ENOTCONN;
+		goto sock_put_out;
+	}
+
+	peeru = bus_sk(peer);
+
+	bus_state_lock(peer);
+	peeru->authenticated = true;
+	bus_state_unlock(peer);
+
+	spin_lock(&u->bus->lock);
+	hlist_add_head(&peeru->bus_node, &u->bus->peers);
+	spin_unlock(&u->bus->lock);
+
+sock_put_out:
+	sock_put(peer);
+	return err;
+}
+
 static int bus_setsockopt(struct socket *sock, int level, int optname,
 			   char __user *optval, unsigned int optlen)
 {
@@ -1671,6 +1713,9 @@ static int bus_setsockopt(struct socket *sock, int level, int optname,
 			return -EFAULT;
 
 		res = bus_add_addr(bus_peer_get(sock->sk), &addr);
+		break;
+	case BUS_JOIN_BUS:
+		res = bus_join_bus(sock->sk);
 		break;
 	default:
 		res = -EINVAL;
