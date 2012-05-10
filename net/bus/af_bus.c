@@ -148,9 +148,8 @@ static int bus_mkname(struct sockaddr_bus *sbusaddr, int len, unsigned *hashp)
 			sizeof(struct bus_addr);
 	}
 
-	*hashp = (bus_hash_fold(csum_partial(sbusaddr->sbus_path,
-					     strlen(sbusaddr->sbus_path), 0))
-		  ^ sbusaddr->sbus_addr.s_addr);
+	*hashp = bus_hash_fold(csum_partial(sbusaddr->sbus_path,
+					    strlen(sbusaddr->sbus_path), 0));
 	return len;
 }
 
@@ -1006,14 +1005,13 @@ restart:
 		spin_lock(&otheru->bus->lock);
 		atomic64_inc(&otheru->bus->addr_cnt);
 		addr->name->sbus_addr.s_addr =
-		       (atomic64_read(&otheru->bus->addr_cnt) & BUS_PREFIX_MASK);
+			(atomic64_read(&otheru->bus->addr_cnt) & BUS_CLIENT_MASK);
 		hlist_add_head(&u->bus_node, &otheru->bus->peers);
 		spin_unlock(&otheru->bus->lock);
 		addr->hash =
-			(bus_hash_fold(csum_partial(addr->name->sbus_path,
+			bus_hash_fold(csum_partial(addr->name->sbus_path,
 						    strlen(sbusaddr->sbus_path),
-						    0))
-			 ^ addr->name->sbus_addr.s_addr);
+						   0));
 		addr->sock = sk;
 		u->addr = addr;
 		u->bus = otheru->bus;
@@ -1628,10 +1626,8 @@ static int bus_add_addr(struct sock *sk, struct bus_addr *sbus_addr)
 	addr->len = u->addr->len;
 
 	addr->name->sbus_addr.s_addr = sbus_addr->s_addr;
-	addr->hash = (bus_hash_fold(csum_partial(addr->name->sbus_path,
-						 strlen(addr->name->sbus_path),
-						 0))
-		      ^ addr->name->sbus_addr.s_addr);
+	addr->hash = bus_hash_fold(csum_partial(addr->name->sbus_path,
+						strlen(addr->name->sbus_path), 0));
 
 	other = bus_find_socket_byaddress(net, addr->name, addr->len,
 					  sk->sk_type, addr->hash);
