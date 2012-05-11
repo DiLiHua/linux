@@ -25,6 +25,8 @@ extern struct sock *bus_peer_get(struct sock *);
 #define BUS_ADD_ADDR 1
 #define BUS_JOIN_BUS 2
 
+#define NF_BUS_SENDING 1
+
 extern unsigned int bus_tot_inflight;
 extern spinlock_t bus_table_lock;
 extern struct hlist_head bus_socket_table[BUS_HASH_SIZE + 1];
@@ -39,6 +41,7 @@ struct bus_address {
 	struct sockaddr_bus name[0];
 };
 
+struct bus_send_context;
 struct bus_skb_parms {
 	struct pid		*pid;		/* Skb credentials	*/
 	const struct cred	*cred;
@@ -46,6 +49,11 @@ struct bus_skb_parms {
 #ifdef CONFIG_SECURITY_NETWORK
 	u32			secid;		/* Security ID		*/
 #endif
+	struct bus_send_context	*sendctx;
+	struct sockaddr_bus	*sender;
+	struct sockaddr_bus	*recipient;
+	unsigned int		authenticated : 1;
+	unsigned int		to_master : 1;
 };
 
 #define BUSCB(skb) 	(*(struct bus_skb_parms *)&((skb)->cb))

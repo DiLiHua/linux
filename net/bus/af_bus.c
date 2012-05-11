@@ -1260,33 +1260,169 @@ static void maybe_add_creds(struct sk_buff *skb, const struct socket *sock,
  *	Send AF_BUS data.
  */
 
+struct bus_send_context
+{
+	struct socket *sender_socket;
+	struct sock_iocb *siocb;
+	long timeo;
+	int max_level;
+	int namelen;
+	unsigned hash;
+	struct sock *other;
+};
+
+static int bus_dgram_sendmsg_finish(struct sk_buff *skb)
+{
+	int err;
+	struct bus_send_context *sendctx;
+	struct socket *sock;
+	struct sock *sk;
+	struct net *net;
+	size_t len = skb->len;
+	size_t newlen;
+
+	sendctx = BUSCB(skb).sendctx;
+	sock = sendctx->sender_socket;
+	sk = sock->sk;
+	net = sock_net(sk);
+
+restart:
+	if (!sendctx->other) {
+		err = -ECONNRESET;
+		if (BUSCB(skb).recipient == NULL)
+			goto out_free;
+
+		sendctx->other = bus_find_other(net, BUSCB(skb).recipient,
+			sendctx->namelen, sk->sk_type,
+			sendctx->hash, &err);
+
+		if (sendctx->other == NULL || !bus_sk(sendctx->other)->authenticated) {
+
+			if (sendctx->other)
+				sock_put(sendctx->other);
+
+			if (!bus_sk(sk)->bus_master_side) {
+				err = -ENOTCONN;
+				sendctx->other = bus_peer_get(sk);
+				if (!sendctx->other)
+					goto out_free;
+			} else {
+				sendctx->other = sk;
+				sock_hold(sendctx->other);
+			}
+		}
+	}
+
+	if (sk_filter(sendctx->other, skb) < 0) {
+		/* Toss the packet but do not return any error to the sender */
+		err = len;
+		goto out_free;
+	}
+	newlen = skb->len;
+
+	bus_state_lock(sendctx->other);
+
+	if (sock_flag(sendctx->other, SOCK_DEAD)) {
+		/*
+		 *	Check with 1003.1g - what should
+		 *	datagram error
+		 */
+		bus_state_unlock(sendctx->other);
+		sock_put(sendctx->other);
+
+		err = 0;
+		bus_state_lock(sk);
+		if (bus_peer(sk) == sendctx->other) {
+			bus_peer(sk) = NULL;
+			bus_state_unlock(sk);
+
+			bus_dgram_disconnected(sk, sendctx->other);
+			sock_put(sendctx->other);
+			err = -ECONNREFUSED;
+		} else {
+			bus_state_unlock(sk);
+		}
+
+		sendctx->other = NULL;
+		if (err)
+			goto out_free;
+		goto restart;
+	}
+
+	err = -EPIPE;
+	if (sendctx->other->sk_shutdown & RCV_SHUTDOWN)
+		goto out_unlock;
+
+	if (sk->sk_type != SOCK_SEQPACKET) {
+		err = security_bus_may_send(sk->sk_socket, sendctx->other->sk_socket);
+		if (err)
+			goto out_unlock;
+	}
+
+	/* FIXME: The blocking thing needs rewriting... it will get tricky with
+	 multicast :) */
+	if (bus_peer(sendctx->other) != sk && bus_recvq_full(sendctx->other)) {
+		if (!sendctx->timeo) {
+			err = -EAGAIN;
+			goto out_unlock;
+		}
+
+		sendctx->timeo = bus_wait_for_peer(sendctx->other, sendctx->timeo);
+
+		err = sock_intr_errno(sendctx->timeo);
+		if (signal_pending(current))
+			goto out_free;
+
+		goto restart;
+	}
+
+	if (sock_flag(sendctx->other, SOCK_RCVTSTAMP))
+		__net_timestamp(skb);
+	maybe_add_creds(skb, sock, sendctx->other);
+	skb_queue_tail(&sendctx->other->sk_receive_queue, skb);
+	if (sendctx->max_level > bus_sk(sendctx->other)->recursion_level)
+		bus_sk(sendctx->other)->recursion_level = sendctx->max_level;
+	bus_state_unlock(sendctx->other);
+	sendctx->other->sk_data_ready(sendctx->other, newlen);
+	sock_put(sendctx->other);
+	scm_destroy(sendctx->siocb->scm);
+	return len;
+
+out_unlock:
+	bus_state_unlock(sendctx->other);
+out_free:
+	kfree_skb(skb);
+	if (sendctx->other)
+		sock_put(sendctx->other);
+	scm_destroy(sendctx->siocb->scm);
+	return err;
+}
+
 static int bus_dgram_sendmsg(struct kiocb *kiocb, struct socket *sock,
 			      struct msghdr *msg, size_t len)
 {
-	struct sock_iocb *siocb = kiocb_to_siocb(kiocb);
 	struct sock *sk = sock->sk;
-	struct net *net = sock_net(sk);
 	struct bus_sock *u = bus_sk(sk);
 	struct sockaddr_bus *sbusaddr = msg->msg_name;
-	struct sock *other = NULL;
-	int namelen = 0; /* fake GCC */
 	int err;
-	unsigned hash;
 	struct sk_buff *skb;
-	long timeo;
 	struct scm_cookie tmp_scm;
-	int max_level;
 	bool to_master = false;
+	struct bus_send_context sendctx;
+
+	sendctx.namelen = 0; /* fake GCC */
+	sendctx.siocb = kiocb_to_siocb(kiocb);
+	sendctx.other = NULL;
 
 	if (sbusaddr && sbusaddr->sbus_addr.s_addr == BUS_MASTER_ADDR)
 		to_master = true;
 	else if (sbusaddr && !u->bus_master_side && !u->authenticated)
 		return -EHOSTUNREACH;
 
-	if (NULL == siocb->scm)
-		siocb->scm = &tmp_scm;
+	if (NULL == sendctx.siocb->scm)
+		sendctx.siocb->scm = &tmp_scm;
 	wait_for_bus_gc();
-	err = scm_send(sock, msg, siocb->scm);
+	err = scm_send(sock, msg, sendctx.siocb->scm);
 	if (err < 0)
 		return err;
 
@@ -1295,15 +1431,15 @@ static int bus_dgram_sendmsg(struct kiocb *kiocb, struct socket *sock,
 		goto out;
 
 	if (msg->msg_namelen && !to_master) {
-		err = bus_mkname(sbusaddr, msg->msg_namelen, &hash);
+		err = bus_mkname(sbusaddr, msg->msg_namelen, &sendctx.hash);
 		if (err < 0)
 			goto out;
-		namelen = err;
+		sendctx.namelen = err;
 	} else {
 		sbusaddr = NULL;
 		err = -ENOTCONN;
-		other = bus_peer_get(sk);
-		if (!other)
+		sendctx.other = bus_peer_get(sk);
+		if (!sendctx.other)
 			goto out;
 	}
 
@@ -1315,125 +1451,37 @@ static int bus_dgram_sendmsg(struct kiocb *kiocb, struct socket *sock,
 	if (skb == NULL)
 		goto out;
 
-	err = bus_scm_to_skb(siocb->scm, skb, true);
+	err = bus_scm_to_skb(sendctx.siocb->scm, skb, true);
 	if (err < 0)
 		goto out_free;
-	max_level = err + 1;
-	bus_get_secdata(siocb->scm, skb);
+	sendctx.max_level = err + 1;
+	bus_get_secdata(sendctx.siocb->scm, skb);
 
 	skb_reset_transport_header(skb);
 	err = memcpy_fromiovec(skb_put(skb, len), msg->msg_iov, len);
 	if (err)
 		goto out_free;
 
-	timeo = sock_sndtimeo(sk, msg->msg_flags & MSG_DONTWAIT);
+	sendctx.timeo = sock_sndtimeo(sk, msg->msg_flags & MSG_DONTWAIT);
 
-restart:
-	if (!other) {
-		err = -ECONNRESET;
-		if (sbusaddr == NULL)
-			goto out_free;
+	sendctx.sender_socket = sock;
+	BUSCB(skb).sender = u->addr->name;
+	BUSCB(skb).recipient = sbusaddr;
+	BUSCB(skb).authenticated = u->authenticated;
+	BUSCB(skb).to_master = to_master;
+	BUSCB(skb).sendctx = &sendctx;
 
-		other = bus_find_other(net, sbusaddr, namelen, sk->sk_type,
-					hash, &err);
+	len = NF_HOOK(NFPROTO_BUS, NF_BUS_SENDING, skb, NULL, NULL,
+		bus_dgram_sendmsg_finish);
 
-		if (other == NULL || !bus_sk(other)->authenticated) {
-
-			if (other)
-				sock_put(other);
-
-			if (!bus_sk(sk)->bus_master_side) {
-				err = -ENOTCONN;
-				other = bus_peer_get(sk);
-				if (!other)
-					goto out_free;
-			} else {
-				other = sk;
-				sock_hold(other);
-			}
-		}
-	}
-
-	if (sk_filter(other, skb) < 0) {
-		/* Toss the packet but do not return any error to the sender */
-		err = len;
-		goto out_free;
-	}
-
-	bus_state_lock(other);
-
-	if (sock_flag(other, SOCK_DEAD)) {
-		/*
-		 *	Check with 1003.1g - what should
-		 *	datagram error
-		 */
-		bus_state_unlock(other);
-		sock_put(other);
-
-		err = 0;
-		bus_state_lock(sk);
-		if (bus_peer(sk) == other) {
-			bus_peer(sk) = NULL;
-			bus_state_unlock(sk);
-
-			bus_dgram_disconnected(sk, other);
-			sock_put(other);
-			err = -ECONNREFUSED;
-		} else {
-			bus_state_unlock(sk);
-		}
-
-		other = NULL;
-		if (err)
-			goto out_free;
-		goto restart;
-	}
-
-	err = -EPIPE;
-	if (other->sk_shutdown & RCV_SHUTDOWN)
-		goto out_unlock;
-
-	if (sk->sk_type != SOCK_SEQPACKET) {
-		err = security_bus_may_send(sk->sk_socket, other->sk_socket);
-		if (err)
-			goto out_unlock;
-	}
-
-	if (bus_peer(other) != sk && bus_recvq_full(other)) {
-		if (!timeo) {
-			err = -EAGAIN;
-			goto out_unlock;
-		}
-
-		timeo = bus_wait_for_peer(other, timeo);
-
-		err = sock_intr_errno(timeo);
-		if (signal_pending(current))
-			goto out_free;
-
-		goto restart;
-	}
-
-	if (sock_flag(other, SOCK_RCVTSTAMP))
-		__net_timestamp(skb);
-	maybe_add_creds(skb, sock, other);
-	skb_queue_tail(&other->sk_receive_queue, skb);
-	if (max_level > bus_sk(other)->recursion_level)
-		bus_sk(other)->recursion_level = max_level;
-	bus_state_unlock(other);
-	other->sk_data_ready(other, len);
-	sock_put(other);
-	scm_destroy(siocb->scm);
 	return len;
 
-out_unlock:
-	bus_state_unlock(other);
 out_free:
 	kfree_skb(skb);
 out:
-	if (other)
-		sock_put(other);
-	scm_destroy(siocb->scm);
+	if (sendctx.other)
+		sock_put(sendctx.other);
+	scm_destroy(sendctx.siocb->scm);
 	return err;
 }
 
