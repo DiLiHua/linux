@@ -67,6 +67,11 @@ int nf_register_hook(struct nf_hook_ops *reg)
 	struct nf_hook_ops *elem;
 	int err;
 
+	if (reg->pf > NFPROTO_NUMPROTO || reg->hooknum > NF_MAX_HOOKS) {
+		BUG();
+		return 1;
+	}
+
 	err = mutex_lock_interruptible(&nf_hook_mutex);
 	if (err < 0)
 		return err;
