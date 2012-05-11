@@ -1339,7 +1339,7 @@ restart:
 		other = bus_find_other(net, sbusaddr, namelen, sk->sk_type,
 					hash, &err);
 
-		if (other == NULL) {
+		if (other == NULL || !bus_sk(other)->authenticated) {
 			if (!bus_sk(sk)->bus_master_side) {
 				err = -ENOTCONN;
 				other = bus_peer_get(sk);
