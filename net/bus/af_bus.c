@@ -1338,6 +1338,10 @@ restart:
 					hash, &err);
 
 		if (other == NULL || !bus_sk(other)->authenticated) {
+
+			if (other)
+				sock_put(other);
+
 			if (!bus_sk(sk)->bus_master_side) {
 				err = -ENOTCONN;
 				other = bus_peer_get(sk);
