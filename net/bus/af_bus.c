@@ -332,8 +332,6 @@ static void bus_dgram_disconnected(struct sock *sk, struct sock *other)
 
 static void bus_sock_destructor(struct sock *sk)
 {
-	struct bus_sock *u = bus_sk(sk);
-
 	skb_queue_purge(&sk->sk_receive_queue);
 
 	WARN_ON(atomic_read(&sk->sk_wmem_alloc));
