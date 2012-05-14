@@ -41,7 +41,21 @@ struct bus_address {
 	struct sockaddr_bus name[0];
 };
 
-struct bus_send_context;
+
+struct bus_send_context {
+	struct socket *sender_socket;
+	struct sock_iocb *siocb;
+	long timeo;
+	int max_level;
+	int namelen;
+	unsigned hash;
+	struct sock *other;
+	struct sockaddr_bus	*sender;
+	struct sockaddr_bus	*recipient;
+	unsigned int		authenticated:1;
+	unsigned int		to_master:1;
+};
+
 struct bus_skb_parms {
 	struct pid		*pid;		/* Skb credentials	*/
 	const struct cred	*cred;
@@ -50,10 +64,6 @@ struct bus_skb_parms {
 	u32			secid;		/* Security ID		*/
 #endif
 	struct bus_send_context	*sendctx;
-	struct sockaddr_bus	*sender;
-	struct sockaddr_bus	*recipient;
-	unsigned int		authenticated : 1;
-	unsigned int		to_master : 1;
 };
 
 #define BUSCB(skb) 	(*(struct bus_skb_parms *)&((skb)->cb))

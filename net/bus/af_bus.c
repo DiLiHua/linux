@@ -1260,17 +1260,6 @@ static void maybe_add_creds(struct sk_buff *skb, const struct socket *sock,
  *	Send AF_BUS data.
  */
 
-struct bus_send_context
-{
-	struct socket *sender_socket;
-	struct sock_iocb *siocb;
-	long timeo;
-	int max_level;
-	int namelen;
-	unsigned hash;
-	struct sock *other;
-};
-
 static int bus_dgram_sendmsg_finish(struct sk_buff *skb)
 {
 	int err;
@@ -1289,14 +1278,15 @@ static int bus_dgram_sendmsg_finish(struct sk_buff *skb)
 restart:
 	if (!sendctx->other) {
 		err = -ECONNRESET;
-		if (BUSCB(skb).recipient == NULL)
+		if (sendctx->recipient == NULL)
 			goto out_free;
 
-		sendctx->other = bus_find_other(net, BUSCB(skb).recipient,
-			sendctx->namelen, sk->sk_type,
-			sendctx->hash, &err);
+		sendctx->other = bus_find_other(net, sendctx->recipient,
+						sendctx->namelen, sk->sk_type,
+						sendctx->hash, &err);
 
-		if (sendctx->other == NULL || !bus_sk(sendctx->other)->authenticated) {
+		if (sendctx->other == NULL ||
+		    !bus_sk(sendctx->other)->authenticated) {
 
 			if (sendctx->other)
 				sock_put(sendctx->other);
@@ -1465,10 +1455,10 @@ static int bus_dgram_sendmsg(struct kiocb *kiocb, struct socket *sock,
 	sendctx.timeo = sock_sndtimeo(sk, msg->msg_flags & MSG_DONTWAIT);
 
 	sendctx.sender_socket = sock;
-	BUSCB(skb).sender = u->addr->name;
-	BUSCB(skb).recipient = sbusaddr;
-	BUSCB(skb).authenticated = u->authenticated;
-	BUSCB(skb).to_master = to_master;
+	sendctx.sender = u->addr->name;
+	sendctx.recipient = sbusaddr;
+	sendctx.authenticated = u->authenticated;
+	sendctx.to_master = to_master;
 	BUSCB(skb).sendctx = &sendctx;
 
 	len = NF_HOOK(NFPROTO_BUS, NF_BUS_SENDING, skb, NULL, NULL,
