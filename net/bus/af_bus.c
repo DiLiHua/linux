@@ -1464,7 +1464,11 @@ static int bus_dgram_sendmsg(struct kiocb *kiocb, struct socket *sock,
 	len = NF_HOOK(NFPROTO_BUS, NF_BUS_SENDING, skb, NULL, NULL,
 		bus_dgram_sendmsg_finish);
 
-	return len;
+	if (len == -EPERM) {
+		err = len;
+		goto out;
+	} else
+		return len;
 
 out_free:
 	kfree_skb(skb);
