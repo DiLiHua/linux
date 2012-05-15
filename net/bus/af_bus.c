@@ -103,6 +103,21 @@ static inline int bus_recvq_full(struct sock const *sk)
 	return skb_queue_len(&sk->sk_receive_queue) > sk->sk_max_ack_backlog;
 }
 
+static inline u16 bus_addr_prefix(struct sockaddr_bus *sbusaddr)
+{
+	return (sbusaddr->sbus_addr.s_addr & BUS_PREFIX_MASK) >> BUS_CLIENT_BITS;
+}
+
+static inline u64 bus_addr_client(struct sockaddr_bus *sbusaddr)
+{
+	return sbusaddr->sbus_addr.s_addr & BUS_CLIENT_MASK;
+}
+
+static inline bool bus_mc_addr(struct sockaddr_bus *sbusaddr)
+{
+	return bus_addr_client(sbusaddr) == BUS_CLIENT_MASK;
+}
+
 struct sock *bus_peer_get(struct sock *s)
 {
 	struct sock *peer;
@@ -202,6 +217,32 @@ static inline void bus_insert_socket(struct hlist_head *list, struct sock *sk)
 	spin_lock(&bus_table_lock);
 	__bus_insert_socket(list, sk);
 	spin_unlock(&bus_table_lock);
+}
+
+static inline bool __bus_has_prefix(struct sock *sk, u16 prefix)
+{
+	struct bus_sock *u = bus_sk(sk);
+	struct bus_address *addr;
+	struct hlist_node *node;
+	bool ret = false;
+
+	hlist_for_each_entry(addr, node, &u->addr_list, addr_node) {
+		if (bus_addr_prefix(addr->name) == prefix)
+			ret = true;
+	}
+
+	return ret;
+}
+
+static inline bool bus_has_prefix(struct sock *sk, u16 prefix)
+{
+	bool ret;
+
+	bus_state_lock(sk);
+	ret = __bus_has_prefix(sk, prefix);
+	bus_state_unlock(sk);
+
+	return ret;
 }
 
 static struct sock *__bus_find_socket_byname(struct net *net,
@@ -1234,7 +1275,7 @@ static int bus_scm_to_skb(struct scm_cookie *scm, struct sk_buff *skb, bool send
 	if (scm->fp && send_fds)
 		err = bus_attach_fds(scm, skb);
 
-	skb->destructor = bus_destruct_scm;
+//	skb->destructor = bus_destruct_scm;
 	return err;
 }
 
@@ -1375,7 +1416,6 @@ restart:
 	bus_state_unlock(sendctx->other);
 	sendctx->other->sk_data_ready(sendctx->other, newlen);
 	sock_put(sendctx->other);
-	scm_destroy(sendctx->siocb->scm);
 	return len;
 
 out_unlock:
@@ -1384,7 +1424,127 @@ out_free:
 	kfree_skb(skb);
 	if (sendctx->other)
 		sock_put(sendctx->other);
+	return err;
+}
+
+static int bus_dgram_sendmsg_mcast(struct sk_buff *skb)
+{
+	struct bus_send_context *sendctx;
+	struct bus_send_context *tmpctx;
+	struct socket *sock;
+	struct sock *sk;
+	struct net *net;
+	struct bus_sock *u, *s;
+	struct hlist_node *node;
+	u16 prefix;
+	struct sk_buff **skb_set;
+	int  rcp_cnt = 0, send_cnt;
+	int i;
+	int err;
+	int len = skb->len;
+
+	sendctx = BUSCB(skb).sendctx;
+	sock = sendctx->sender_socket;
+	sk = sock->sk;
+	u = bus_sk(sk);
+	net = sock_net(sk);
+
+	prefix = bus_addr_prefix(sendctx->recipient);
+
+	spin_lock(&u->bus->lock);
+
+	hlist_for_each_entry(s, node, &u->bus->peers, bus_node) {
+
+		if (!net_eq(sock_net(&s->sk), net))
+			continue;
+
+		if (bus_has_prefix(&s->sk, prefix))
+			rcp_cnt++;
+	}
+
+	spin_unlock(&u->bus->lock);
+
+	skb_set = kmalloc(sizeof(struct sk_buff *) * rcp_cnt, GFP_KERNEL);
+	if (!skb_set) {
+		err = -ENOMEM;
+		goto out;
+	}
+
+	for (i = 0; i < rcp_cnt; i++) {
+		skb_set[i] = skb_clone(skb, GFP_KERNEL);
+		if (!skb_set[i]) {
+			err = -ENOMEM;
+			goto out_free;
+		}
+		BUSCB(skb_set[i]).sendctx = kmalloc(sizeof(*sendctx) * rcp_cnt,
+						    GFP_KERNEL);
+		if (!BUSCB(skb_set[i]).sendctx) {
+			err = -ENOMEM;
+			goto out_free;
+		}
+		memcpy(BUSCB(skb_set[i]).sendctx, sendctx, sizeof(*sendctx));
+		err = bus_scm_to_skb(BUSCB(skb_set[i]).sendctx->siocb->scm,
+				     skb_set[i],
+				      true);
+		if (err < 0)
+			goto out_free;
+		bus_get_secdata(BUSCB(skb_set[i]).sendctx->siocb->scm,
+				skb_set[i]);
+
+		BUSCB(skb_set[i]).sendctx->other = NULL;
+	}
+
+	/*
+	 * FIXME: what happens if the bus->peers change between we released
+	 * the bus->lock to do the allocation and now that we want to send?
+	 */
+	send_cnt = 0;
+
+	spin_lock(&u->bus->lock);
+
+	hlist_for_each_entry(s, node, &u->bus->peers, bus_node) {
+
+		if (!net_eq(sock_net(&s->sk), net))
+			continue;
+
+		if (bus_has_prefix(&s->sk, prefix)) {
+			skb_set_owner_w(skb_set[send_cnt], &s->sk);
+			tmpctx = BUSCB(skb_set[send_cnt]).sendctx;
+			tmpctx->other = &s->sk;
+			tmpctx->recipient = s->addr->name;
+			send_cnt++;
+		}
+	}
+
+	spin_unlock(&u->bus->lock);
+
+	for (i = 0, err = 0; i < send_cnt; i++) {
+		tmpctx = BUSCB(skb_set[i]).sendctx;
+		sock_hold(tmpctx->other);
+		len = NF_HOOK(NFPROTO_BUS, NF_BUS_SENDING, skb_set[i],
+			      NULL, NULL, bus_dgram_sendmsg_finish);
+		if (len == -EPERM)
+			sock_put(tmpctx->other);
+	}
+
+	err = len;
+	goto out;
+
+out_free:
+	for (i = 0; i < rcp_cnt; i++) {
+		if (skb_set[i]) {
+			if (BUSCB(skb_set[i]).sendctx)
+				kfree(BUSCB(skb_set[i]).sendctx);
+			kfree_skb(skb_set[i]);
+		}
+	}
+
+out:
+	kfree_skb(skb);
+	if (sendctx->other)
+		sock_put(sendctx->other);
 	scm_destroy(sendctx->siocb->scm);
+
 	return err;
 }
 
@@ -1461,14 +1621,22 @@ static int bus_dgram_sendmsg(struct kiocb *kiocb, struct socket *sock,
 	sendctx.to_master = to_master;
 	BUSCB(skb).sendctx = &sendctx;
 
-	len = NF_HOOK(NFPROTO_BUS, NF_BUS_SENDING, skb, NULL, NULL,
-		bus_dgram_sendmsg_finish);
-
-	if (len == -EPERM) {
-		err = len;
-		goto out;
-	} else
+	if (sbusaddr && bus_mc_addr(sbusaddr)) {
+		len = bus_dgram_sendmsg_mcast(skb);
+		scm_destroy(sendctx.siocb->scm);
 		return len;
+	} else {
+		len = NF_HOOK(NFPROTO_BUS, NF_BUS_SENDING, skb, NULL, NULL,
+			      bus_dgram_sendmsg_finish);
+
+		if (len == -EPERM) {
+			err = len;
+			goto out;
+		} else {
+			scm_destroy(sendctx.siocb->scm);
+			return len;
+		}
+	}
 
 out_free:
 	kfree_skb(skb);
