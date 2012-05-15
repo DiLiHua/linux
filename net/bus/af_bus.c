@@ -414,7 +414,6 @@ static int bus_release_sock(struct sock *sk, int embrion)
 
 	if (u->bus_master) {
 			spin_lock(&u->bus->lock);
-			hlist_del(&u->bus_node);
 			u->bus->master = NULL;
 			spin_unlock(&u->bus->lock);
 	}
@@ -843,7 +842,6 @@ out_mknod_drop_write:
 	atomic64_set(&bus->addr_cnt, 0);
 
 	hlist_add_head(&addr->addr_node, &u->addr_list);
-	hlist_add_head(&u->bus_node, &bus->peers);
 
 	err = 0;
 	__bus_remove_socket(sk);
