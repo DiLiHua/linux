@@ -77,6 +77,11 @@ struct bus_skb_parms {
 
 struct bus {
 	struct sock		*master;
+        /*
+	 * List of (struct bus_sock)->bus_node
+	 * Only sockets that were allowed to join the bus by the bus
+	 * master socket are members of this list.
+	 */
 	struct hlist_head       peers;
 	spinlock_t		lock;
 	atomic64_t              addr_cnt;
