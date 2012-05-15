@@ -91,6 +91,11 @@ static inline unsigned bus_hash_fold(__wsum n)
 	return hash&(BUS_HASH_SIZE-1);
 }
 
+static inline unsigned bus_compute_hash(struct bus_addr addr)
+{
+	return bus_hash_fold(csum_partial((void *)&addr, sizeof(addr), 0));
+}
+
 #define bus_peer(sk) (bus_sk(sk)->peer)
 
 static inline int bus_our_peer(struct sock *sk, struct sock *osk)
@@ -151,20 +156,12 @@ static int bus_mkname(struct sockaddr_bus *sbusaddr, int len, unsigned *hashp)
 	if (!sbusaddr || sbusaddr->sbus_family != AF_BUS)
 		return -EINVAL;
 	if (sbusaddr->sbus_path[0]) {
-		/*
-		 * This may look like an off by one error but it is a bit more
-		 * subtle. 108 is the longest valid AF_BUS path for a binding.
-		 * bus_path[108] doesn't as such exist.  However in kernel space
-		 * we are guaranteed that it is a valid memory location in our
-		 * kernel address buffer.
-		 */
 		len = strlen(sbusaddr->sbus_path) + 1 +
 			sizeof(__kernel_sa_family_t) +
 			sizeof(struct bus_addr);
 	}
 
-	*hashp = bus_hash_fold(csum_partial(sbusaddr->sbus_path,
-					    strlen(sbusaddr->sbus_path), 0));
+	*hashp = bus_compute_hash(sbusaddr->sbus_addr);
 	return len;
 }
 
@@ -1046,10 +1043,7 @@ restart:
 		addr->name->sbus_addr.s_addr =
 			(atomic64_read(&otheru->bus->addr_cnt) & BUS_CLIENT_MASK);
 		spin_unlock(&otheru->bus->lock);
-		addr->hash =
-			bus_hash_fold(csum_partial(addr->name->sbus_path,
-						    strlen(sbusaddr->sbus_path),
-						   0));
+		addr->hash = bus_compute_hash(addr->name->sbus_addr);
 		addr->sock = sk;
 		u->addr = addr;
 		u->bus = otheru->bus;
@@ -1844,9 +1838,7 @@ static int bus_add_addr(struct sock *sk, struct bus_addr *sbus_addr)
 	addr->len = u->addr->len;
 
 	addr->name->sbus_addr.s_addr = sbus_addr->s_addr;
-	addr->hash = bus_hash_fold(csum_partial(addr->name->sbus_path,
-						strlen(addr->name->sbus_path), 0));
-
+	addr->hash = bus_compute_hash(addr->name->sbus_addr);
 	other = bus_find_socket_byaddress(net, addr->name, addr->len,
 					  sk->sk_type, addr->hash);
 
