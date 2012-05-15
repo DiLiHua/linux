@@ -151,15 +151,16 @@ static inline void bus_release_addr(struct bus_address *addr)
 
 static int bus_mkname(struct sockaddr_bus *sbusaddr, int len, unsigned *hashp)
 {
+	int offset = (sbusaddr->sbus_path[0] == '\0');
+
 	if (len <= sizeof(short) || len > sizeof(*sbusaddr))
 		return -EINVAL;
 	if (!sbusaddr || sbusaddr->sbus_family != AF_BUS)
 		return -EINVAL;
-	if (sbusaddr->sbus_path[0]) {
-		len = strlen(sbusaddr->sbus_path) + 1 +
-			sizeof(__kernel_sa_family_t) +
-			sizeof(struct bus_addr);
-	}
+
+	len = strlen(sbusaddr->sbus_path + offset) + 1 +
+		sizeof(__kernel_sa_family_t) +
+		sizeof(struct bus_addr);
 
 	*hashp = bus_compute_hash(sbusaddr->sbus_addr);
 	return len;
@@ -287,7 +288,8 @@ static struct sock *__bus_find_socket_byaddress(struct net *net,
 	struct bus_address *addr;
 	struct hlist_node *node;
 	struct bus_sock *u;
-	int path_len = strlen(sbusname->sbus_path);
+	int offset = (sbusname->sbus_path[0] == '\0');
+	int path_len = strlen(sbusname->sbus_path + offset);
 
 	len = path_len + 1 + sizeof(__kernel_sa_family_t) +
 	      sizeof(struct bus_addr);
@@ -303,8 +305,9 @@ static struct sock *__bus_find_socket_byaddress(struct net *net,
 		if (addr->len == len &&
 		    addr->name->sbus_family == sbusname->sbus_family &&
 		    addr->name->sbus_addr.s_addr == sbusname->sbus_addr.s_addr &&
-		    !memcmp(addr->name->sbus_path, sbusname->sbus_path,
-			   path_len))
+		    !memcmp(addr->name->sbus_path + offset,
+			    sbusname->sbus_path + offset,
+			    path_len))
 			goto found;
 	}
 	s = NULL;
