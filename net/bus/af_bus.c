@@ -817,6 +817,11 @@ out_mknod_drop_write:
 		path.dentry = dentry;
 	}
 
+	err = -ENOMEM;
+	bus = kzalloc(sizeof(*bus), GFP_KERNEL);
+	if (!bus)
+		goto out_unlock;
+
 	spin_lock(&bus_table_lock);
 
 	if (!sbus_path[0]) {
@@ -824,6 +829,8 @@ out_mknod_drop_write:
 		if (__bus_find_socket_byname(net, sbusaddr, addr_len,
 					      sk->sk_type, hash)) {
 			bus_release_addr(addr);
+			if (bus)
+				kfree(bus);
 			goto out_unlock;
 		}
 
@@ -832,11 +839,6 @@ out_mknod_drop_write:
 		list = &bus_socket_table[dentry->d_inode->i_ino & (BUS_HASH_SIZE-1)];
 		u->path = path;
 	}
-
-	err = -ENOMEM;
-	bus = kzalloc(sizeof(*bus), GFP_KERNEL);
-	if (!bus)
-		goto out_unlock;
 
 	bus->master = sk;
 	INIT_HLIST_HEAD(&bus->peers);
