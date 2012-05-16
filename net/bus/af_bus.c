@@ -546,7 +546,6 @@ static int bus_release(struct socket *);
 static int bus_bind(struct socket *, struct sockaddr *, int);
 static int bus_stream_connect(struct socket *, struct sockaddr *,
 			       int addr_len, int flags);
-static int bus_socketpair(struct socket *, struct socket *);
 static int bus_accept(struct socket *, struct socket *, int);
 static int bus_getname(struct socket *, struct sockaddr *, int *, int);
 static unsigned int bus_dgram_poll(struct file *, struct socket *,
@@ -579,7 +578,7 @@ static const struct proto_ops bus_seqpacket_ops = {
 	.release =	bus_release,
 	.bind =		bus_bind,
 	.connect =	bus_stream_connect,
-	.socketpair =	bus_socketpair,
+	.socketpair =	sock_no_socketpair,
 	.accept =	bus_accept,
 	.getname =	bus_getname,
 	.poll =		bus_dgram_poll,
@@ -1094,27 +1093,6 @@ out:
 	if (other)
 		sock_put(other);
 	return err;
-}
-
-static int bus_socketpair(struct socket *socka, struct socket *sockb)
-{
-	struct sock *ska = socka->sk, *skb = sockb->sk;
-
-	/* Join our sockets back to back */
-	sock_hold(ska);
-	sock_hold(skb);
-	bus_peer(ska) = skb;
-	bus_peer(skb) = ska;
-	init_peercred(ska);
-	init_peercred(skb);
-
-	if (ska->sk_type != SOCK_DGRAM) {
-		ska->sk_state = TCP_ESTABLISHED;
-		skb->sk_state = TCP_ESTABLISHED;
-		socka->state  = SS_CONNECTED;
-		sockb->state  = SS_CONNECTED;
-	}
-	return 0;
 }
 
 static int bus_accept(struct socket *sock, struct socket *newsock, int flags)
