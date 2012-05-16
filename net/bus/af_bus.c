@@ -1493,12 +1493,12 @@ static int bus_dgram_sendmsg_mcast(struct sk_buff *skb)
 
 	spin_unlock(&u->bus->lock);
 
-	for (i = 0, err = 0; i < send_cnt; i++) {
+	for (i = 0; i < send_cnt; i++) {
 		tmpctx = BUSCB(skb_set[i]).sendctx;
 		sock_hold(tmpctx->other);
-		len = NF_HOOK(NFPROTO_BUS, NF_BUS_SENDING, skb_set[i],
+		err = NF_HOOK(NFPROTO_BUS, NF_BUS_SENDING, skb_set[i],
 			      NULL, NULL, bus_dgram_sendmsg_finish);
-		if (len == -EPERM)
+		if (err == -EPERM)
 			sock_put(tmpctx->other);
 	}
 
@@ -1597,7 +1597,7 @@ static int bus_dgram_sendmsg(struct kiocb *kiocb, struct socket *sock,
 	BUSCB(skb).sendctx = &sendctx;
 
 	if (sbusaddr && bus_mc_addr(sbusaddr)) {
-		len = bus_dgram_sendmsg_mcast(skb);
+		bus_dgram_sendmsg_mcast(skb);
 		scm_destroy(sendctx.siocb->scm);
 		return len;
 	} else {
