@@ -281,8 +281,9 @@ static inline struct sock *bus_find_socket_byname(struct net *net,
 }
 
 static struct sock *__bus_find_socket_byaddress(struct net *net,
-					      struct sockaddr_bus *sbusname,
-					      int len, int type, unsigned hash)
+						struct sockaddr_bus *sbusname,
+						int len, int type, int protocol,
+						unsigned hash)
 {
 	struct sock *s;
 	struct bus_address *addr;
@@ -298,6 +299,9 @@ static struct sock *__bus_find_socket_byaddress(struct net *net,
 			     table_node) {
 		s = addr->sock;
 		u = bus_sk(s);
+
+		if (s->sk_protocol != protocol)
+			continue;
 
 		if (!net_eq(sock_net(s), net))
 			continue;
@@ -316,14 +320,15 @@ found:
 }
 
 static inline struct sock *bus_find_socket_byaddress(struct net *net,
-						   struct sockaddr_bus *sbusname,
-						   int len, int type,
-						   unsigned hash)
+						     struct sockaddr_bus *sbusname,
+						     int len, int type,
+						     int protocol,
+						     unsigned hash)
 {
 	struct sock *s;
 
 	spin_lock(&bus_address_lock);
-	s = __bus_find_socket_byaddress(net, sbusname, len, type, hash);
+	s = __bus_find_socket_byaddress(net, sbusname, len, type, protocol, hash);
 	if (s)
 		sock_hold(s);
 	spin_unlock(&bus_address_lock);
@@ -694,8 +699,9 @@ static int bus_release(struct socket *sock)
 }
 
 static struct sock *bus_find_other(struct net *net,
-				    struct sockaddr_bus *sbusname, int len,
-				    int type, unsigned hash, int *error)
+				   struct sockaddr_bus *sbusname, int len,
+				   int type, int protocol, unsigned hash,
+				   int *error)
 {
 	struct sock *u;
 	struct path path;
@@ -714,7 +720,7 @@ static struct sock *bus_find_other(struct net *net,
 		err = -ECONNREFUSED;
 		if (!S_ISSOCK(inode->i_mode))
 			goto put_fail;
-		u = bus_find_socket_byaddress(net, sbusname, len, type, hash);
+		u = bus_find_socket_byaddress(net, sbusname, len, type, protocol, hash);
 		if (!u)
 			goto put_fail;
 
@@ -730,7 +736,7 @@ static struct sock *bus_find_other(struct net *net,
 		}
 	} else {
 		err = -ECONNREFUSED;
-		u = bus_find_socket_byaddress(net, sbusname, len, type, hash);
+		u = bus_find_socket_byaddress(net, sbusname, len, type, protocol, hash);
 		if (u) {
 			struct dentry *dentry;
 			dentry = bus_sk(u)->path.dentry;
@@ -960,7 +966,8 @@ static int bus_stream_connect(struct socket *sock, struct sockaddr *uaddr,
 
 restart:
 	/*  Find listening sock. */
-	other = bus_find_other(net, sbusaddr, addr_len, sk->sk_type, hash, &err);
+	other = bus_find_other(net, sbusaddr, addr_len, sk->sk_type,
+			       sk->sk_protocol, hash, &err);
 	if (!other)
 		goto out;
 
@@ -1312,6 +1319,7 @@ restart:
 
 		sendctx->other = bus_find_other(net, sendctx->recipient,
 						sendctx->namelen, sk->sk_type,
+						sk->sk_protocol,
 						sendctx->hash, &err);
 
 		if (sendctx->other == NULL ||
@@ -1837,7 +1845,8 @@ static int bus_add_addr(struct sock *sk, struct bus_addr *sbus_addr)
 	addr->name->sbus_addr.s_addr = sbus_addr->s_addr;
 	addr->hash = bus_compute_hash(addr->name->sbus_addr);
 	other = bus_find_socket_byaddress(net, addr->name, addr->len,
-					  sk->sk_type, addr->hash);
+					  sk->sk_type, sk->sk_protocol,
+					  addr->hash);
 
 	if (other) {
 		sock_put(other);
