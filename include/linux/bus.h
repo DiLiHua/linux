@@ -3,6 +3,11 @@
 
 #include <linux/socket.h>
 
+/* 'protocol' to use in socket(AF_BUS, SOCK_SEQPACKET, protocol) */
+#define BUS_PROTO_NONE	0
+#define BUS_PROTO_DBUS	1
+#define BUS_PROTO_MAX	1
+
 #define BUS_PATH_MAX	108
 
 /* Bus address */

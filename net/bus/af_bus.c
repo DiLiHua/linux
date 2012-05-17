@@ -656,8 +656,14 @@ out:
 static int bus_create(struct net *net, struct socket *sock, int protocol,
 		       int kern)
 {
-	if (protocol && protocol != PF_BUS)
+	struct sock *sk;
+
+	if (protocol < BUS_PROTO_NONE || protocol > BUS_PROTO_DBUS)
 		return -EPROTONOSUPPORT;
+
+	if (protocol != BUS_PROTO_NONE) {
+		request_module("net-pf-%d-proto-%d", PF_BUS, protocol);
+	}
 
 	sock->state = SS_UNCONNECTED;
 
@@ -666,7 +672,13 @@ static int bus_create(struct net *net, struct socket *sock, int protocol,
 	else
 		return -ESOCKTNOSUPPORT;
 
-	return bus_create1(net, sock) ? 0 : -ENOMEM;
+	sk = bus_create1(net, sock);
+	if (!sk)
+		return -ENOMEM;
+
+	sk->sk_protocol = protocol;
+
+	return 0;
 }
 
 static int bus_release(struct socket *sock)
@@ -1029,6 +1041,7 @@ restart:
 	bus_peer(newsk)	= sk;
 	newsk->sk_state		= TCP_ESTABLISHED;
 	newsk->sk_type		= sk->sk_type;
+	newsk->sk_protocol	= sk->sk_protocol;
 	init_peercred(newsk);
 	newu = bus_sk(newsk);
 	RCU_INIT_POINTER(newsk->sk_wq, &newu->peer_wq);
