@@ -53,7 +53,9 @@ struct bus_send_context {
 	struct sockaddr_bus	*sender;
 	struct sockaddr_bus	*recipient;
 	unsigned int		authenticated:1;
+	unsigned int		bus_master_side:1;
 	unsigned int		to_master:1;
+	unsigned int		multicast:1;
 };
 
 struct bus_skb_parms {

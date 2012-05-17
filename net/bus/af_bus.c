@@ -1593,14 +1593,17 @@ static int bus_dgram_sendmsg(struct kiocb *kiocb, struct socket *sock,
 	sendctx.sender = u->addr->name;
 	sendctx.recipient = sbusaddr;
 	sendctx.authenticated = u->authenticated;
+	sendctx.bus_master_side = u->bus_master_side;
 	sendctx.to_master = to_master;
 	BUSCB(skb).sendctx = &sendctx;
 
 	if (sbusaddr && bus_mc_addr(sbusaddr)) {
+		sendctx.multicast = 1;
 		bus_dgram_sendmsg_mcast(skb);
 		scm_destroy(sendctx.siocb->scm);
 		return len;
 	} else {
+		sendctx.multicast = 0;
 		len = NF_HOOK(NFPROTO_BUS, NF_BUS_SENDING, skb, NULL, NULL,
 			      bus_dgram_sendmsg_finish);
 
