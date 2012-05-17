@@ -79,8 +79,18 @@ static inline void bus_set_secdata(struct scm_cookie *scm, struct sk_buff *skb)
 
 /*
  *  SMP locking strategy:
- *    hash table is protected with spinlock bus_table_lock
- *    each socket state is protected by separate spin lock.
+ *    bus_socket_table hash table is protected with spinlock bus_table_lock
+ *    bus_address_table hash table is protected with spinlock bus_address_lock
+ *    each bus is protected by a separate spin lock.
+ *    each socket state is protected by a separate spin lock.
+ *    each socket address is protected by a separate spin lock.
+ *
+ *  When holding more than one lock, use the following hierarchy:
+ *  - bus_table_lock.
+ *  - bus_address_lock.
+ *  - socket lock.
+ *  - bus lock.
+ * - sock address lock.
  */
 
 static inline unsigned bus_hash_fold(__wsum n)
@@ -420,11 +430,8 @@ static int bus_release_sock(struct sock *sk, int embrion)
 	state = sk->sk_state;
 	sk->sk_state = TCP_CLOSE;
 
-	if (u->bus_master) {
-			spin_lock(&u->bus->lock);
+	if (u->bus_master)
 			u->bus->master = NULL;
-			spin_unlock(&u->bus->lock);
-	}
 
 	if (u->bus_master_side) {
 		bus_release_addr(u->addr);
@@ -1060,11 +1067,9 @@ restart:
 		newu->addr = otheru->addr;
 		memcpy(addr->name, otheru->addr->name, sizeof(struct sockaddr_bus));
 		addr->len = otheru->addr->len;
-		spin_lock(&otheru->bus->lock);
-		atomic64_inc(&otheru->bus->addr_cnt);
 		addr->name->sbus_addr.s_addr =
-			(atomic64_read(&otheru->bus->addr_cnt) & BUS_CLIENT_MASK);
-		spin_unlock(&otheru->bus->lock);
+			(atomic64_inc_return(&otheru->bus->addr_cnt) &
+			 BUS_CLIENT_MASK);
 		addr->hash = bus_compute_hash(addr->name->sbus_addr);
 		addr->sock = sk;
 		u->addr = addr;
