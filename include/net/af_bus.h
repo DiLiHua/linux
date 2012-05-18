@@ -86,6 +86,7 @@ struct bus {
 	 */
 	struct hlist_head       peers;
 	spinlock_t		lock;
+	struct kref             kref;
 	atomic64_t              addr_cnt;
 };
 

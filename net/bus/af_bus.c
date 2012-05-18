@@ -408,6 +408,15 @@ static void bus_sock_destructor(struct sock *sk)
 #endif
 }
 
+static void bus_bus_release(struct kref *kref)
+{
+	struct bus *bus;
+
+	bus = container_of(kref, struct bus, kref);
+
+	kfree(bus);
+}
+
 static int bus_release_sock(struct sock *sk, int embrion)
 {
 	struct bus_sock *u = bus_sk(sk);
@@ -432,6 +441,11 @@ static int bus_release_sock(struct sock *sk, int embrion)
 
 	if (u->bus_master)
 			u->bus->master = NULL;
+
+	if (u->bus) {
+		kref_put(&u->bus->kref, bus_bus_release);
+		u->bus = NULL;
+	}
 
 	if (u->bus_master_side) {
 		bus_release_addr(u->addr);
@@ -865,6 +879,7 @@ out_mknod_drop_write:
 		u->path = path;
 	}
 
+	kref_init(&bus->kref);
 	bus->master = sk;
 	INIT_HLIST_HEAD(&bus->peers);
 	spin_lock_init(&bus->lock);
@@ -1073,8 +1088,10 @@ restart:
 		addr->hash = bus_compute_hash(addr->name->sbus_addr);
 		addr->sock = sk;
 		u->addr = addr;
+		kref_get(&otheru->bus->kref);
 		u->bus = otheru->bus;
 		u->bus_master_side = false;
+		kref_get(&otheru->bus->kref);
 		newu->bus = otheru->bus;
 		newu->bus_master_side = true;
 		hlist_add_head(&addr->addr_node, &u->addr_list);
