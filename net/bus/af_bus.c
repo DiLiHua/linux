@@ -1634,7 +1634,14 @@ static int bus_dgram_sendmsg(struct kiocb *kiocb, struct socket *sock,
 	sendctx.timeo = sock_sndtimeo(sk, msg->msg_flags & MSG_DONTWAIT);
 
 	sendctx.sender_socket = sock;
-	sendctx.sender = u->addr->name;
+	if (u->bus_master_side && sendctx.other) {
+		/* if the bus master sent an unicast message to a peer, we
+		 * need the address of that peer
+		 */
+		sendctx.sender = bus_sk(sendctx.other)->addr->name;
+	} else {
+		sendctx.sender = u->addr->name;
+	}
 	sendctx.recipient = sbusaddr;
 	sendctx.authenticated = u->authenticated;
 	sendctx.bus_master_side = u->bus_master_side;
