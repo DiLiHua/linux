@@ -1565,7 +1565,8 @@ static int bus_dgram_sendmsg(struct kiocb *kiocb, struct socket *sock,
 	sendctx.siocb = kiocb_to_siocb(kiocb);
 	sendctx.other = NULL;
 
-	if (sbusaddr && sbusaddr->sbus_addr.s_addr == BUS_MASTER_ADDR)
+	if ((!sbusaddr && !u->bus_master_side) ||
+	    (sbusaddr && sbusaddr->sbus_addr.s_addr == BUS_MASTER_ADDR))
 		to_master = true;
 	else if (sbusaddr && !u->bus_master_side && !u->authenticated)
 		return -EHOSTUNREACH;
