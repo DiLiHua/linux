@@ -1558,6 +1558,8 @@ out_free:
 	}
 
 out:
+	if (skb_set)
+		kfree(skb_set);
 	kfree_skb(skb);
 	if (sendctx->other)
 		sock_put(sendctx->other);
