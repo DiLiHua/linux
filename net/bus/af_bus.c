@@ -1456,6 +1456,7 @@ static int bus_dgram_sendmsg_mcast(struct sk_buff *skb)
 	struct hlist_node *node;
 	u16 prefix;
 	struct sk_buff **skb_set;
+	struct bus_send_context **sendctx_set = NULL;
 	int  rcp_cnt = 0, send_cnt;
 	int i;
 	int err;
@@ -1488,28 +1489,33 @@ static int bus_dgram_sendmsg_mcast(struct sk_buff *skb)
 		goto out;
 	}
 
+	sendctx_set = kmalloc(sizeof(struct bus_send_context *) * rcp_cnt, GFP_KERNEL);
+	if (!sendctx_set) {
+		err = -ENOMEM;
+		goto out;
+	}
+
 	for (i = 0; i < rcp_cnt; i++) {
 		skb_set[i] = skb_clone(skb, GFP_KERNEL);
 		if (!skb_set[i]) {
 			err = -ENOMEM;
 			goto out_free;
 		}
-		BUSCB(skb_set[i]).sendctx = kmalloc(sizeof(*sendctx) * rcp_cnt,
-						    GFP_KERNEL);
-		if (!BUSCB(skb_set[i]).sendctx) {
+		sendctx_set[i] = BUSCB(skb_set[i]).sendctx
+			= kmalloc(sizeof(*sendctx) * rcp_cnt, GFP_KERNEL);
+		if (!sendctx_set[i]) {
 			err = -ENOMEM;
 			goto out_free;
 		}
-		memcpy(BUSCB(skb_set[i]).sendctx, sendctx, sizeof(*sendctx));
-		err = bus_scm_to_skb(BUSCB(skb_set[i]).sendctx->siocb->scm,
-				     skb_set[i],
-				      true);
+		memcpy(sendctx_set[i], sendctx, sizeof(*sendctx));
+		err = bus_scm_to_skb(sendctx_set[i]->siocb->scm,
+				     skb_set[i], true);
 		if (err < 0)
 			goto out_free;
-		bus_get_secdata(BUSCB(skb_set[i]).sendctx->siocb->scm,
+		bus_get_secdata(sendctx_set[i]->siocb->scm,
 				skb_set[i]);
 
-		BUSCB(skb_set[i]).sendctx->other = NULL;
+		sendctx_set[i]->other = NULL;
 	}
 
 	/*
@@ -1551,8 +1557,6 @@ static int bus_dgram_sendmsg_mcast(struct sk_buff *skb)
 out_free:
 	for (i = 0; i < rcp_cnt; i++) {
 		if (skb_set[i]) {
-			if (BUSCB(skb_set[i]).sendctx)
-				kfree(BUSCB(skb_set[i]).sendctx);
 			kfree_skb(skb_set[i]);
 		}
 	}
@@ -1560,6 +1564,12 @@ out_free:
 out:
 	if (skb_set)
 		kfree(skb_set);
+	for (i = 0; i < rcp_cnt; i++) {
+		if (sendctx_set[i])
+			kfree(sendctx_set[i]);
+	}
+	if (sendctx_set)
+		kfree(sendctx_set);
 	kfree_skb(skb);
 	if (sendctx->other)
 		sock_put(sendctx->other);
