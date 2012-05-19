@@ -429,6 +429,13 @@ static int bus_release_sock(struct sock *sk, int embrion)
 
 	bus_remove_socket(sk);
 
+	if (u->bus && u->authenticated &&
+	    !u->bus_master && !u->bus_master_side) {
+		spin_lock(&u->bus->lock);
+		hlist_del(&u->bus_node);
+		spin_unlock(&u->bus->lock);
+	}
+
 	/* Clear state */
 	bus_state_lock(sk);
 	sock_orphan(sk);
