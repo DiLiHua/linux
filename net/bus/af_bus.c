@@ -1892,7 +1892,7 @@ static int bus_add_addr(struct sock *sk, struct bus_addr *sbus_addr)
 
 	if (other) {
 		sock_put(other);
-		bus_release_addr(addr);
+		kfree(addr);
 		ret = -EADDRINUSE;
 		goto out;
 	}
