@@ -24,6 +24,7 @@ extern struct sock *bus_peer_get(struct sock *);
 /* AF_BUS socket options */
 #define BUS_ADD_ADDR 1
 #define BUS_JOIN_BUS 2
+#define BUS_DEL_ADDR 3
 
 #define NF_BUS_SENDING 1
 

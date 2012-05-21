@@ -253,6 +253,34 @@ static inline bool bus_has_prefix(struct sock *sk, u16 prefix)
 	return ret;
 }
 
+static inline struct bus_address *__bus_get_address(struct sock *sk,
+						    struct bus_addr *sbus_addr)
+{
+	struct bus_sock *u = bus_sk(sk);
+	struct bus_address *addr = NULL;
+	struct hlist_node *node;
+
+	hlist_for_each_entry(addr, node, &u->addr_list, addr_node) {
+		if (addr->name->sbus_addr.s_addr == sbus_addr->s_addr)
+			goto found;
+	}
+
+found:
+	return addr;
+}
+
+static inline struct bus_address *bus_get_address(struct sock *sk,
+						  struct bus_addr *sbus_addr)
+{
+	struct bus_address *addr;
+
+	bus_state_lock(sk);
+	addr = __bus_get_address(sk, sbus_addr);
+	bus_state_unlock(sk);
+
+	return addr;
+}
+
 static struct sock *__bus_find_socket_byname(struct net *net,
 					      struct sockaddr_bus *sbusname,
 					      int len, int type, unsigned hash)
@@ -1919,6 +1947,29 @@ out:
 	return ret;
 }
 
+static int bus_del_addr(struct sock *sk, struct bus_addr *sbus_addr)
+{
+	struct bus_address *addr;
+	int ret = 0;
+
+	bus_state_lock(sk);
+	addr = __bus_get_address(sk, sbus_addr);
+	if (!addr) {
+		ret = -EINVAL;
+		bus_state_unlock(sk);
+		goto out;
+	}
+	hlist_del(&addr->addr_node);
+	bus_state_unlock(sk);
+
+	bus_remove_address(addr);
+	bus_release_addr(addr);
+out:
+	sock_put(sk);
+
+	return ret;
+}
+
 static int bus_join_bus(struct sock *sk)
 {
 	struct sock *peer;
@@ -1972,6 +2023,14 @@ static int bus_setsockopt(struct socket *sock, int level, int optname,
 			return -EFAULT;
 
 		res = bus_add_addr(bus_peer_get(sock->sk), &addr);
+		break;
+	case BUS_DEL_ADDR:
+		if (optlen < sizeof(struct bus_addr))
+			return -EINVAL;
+		if (copy_from_user(&addr, optval, sizeof(struct bus_addr)))
+			return -EFAULT;
+
+		res = bus_del_addr(bus_peer_get(sock->sk), &addr);
 		break;
 	case BUS_JOIN_BUS:
 		res = bus_join_bus(sock->sk);
