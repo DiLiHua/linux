@@ -1593,16 +1593,18 @@ out_free:
 	for (i = 0; i < rcp_cnt; i++) {
 		if (skb_set[i])
 			kfree_skb(skb_set[i]);
-
-		if (sendctx_set[i])
-			kfree(sendctx_set[i]);
 	}
 
 out:
 	if (skb_set)
 		kfree(skb_set);
-	if (sendctx_set)
+	if (sendctx_set) {
+		for (i = 0; i < rcp_cnt; i++) {
+			if (sendctx_set[i])
+				kfree(sendctx_set[i]);
+		}
 		kfree(sendctx_set);
+	}
 	kfree_skb(skb);
 	if (sendctx->other)
 		sock_put(sendctx->other);
