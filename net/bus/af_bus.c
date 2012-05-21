@@ -1591,18 +1591,16 @@ static int bus_dgram_sendmsg_mcast(struct sk_buff *skb)
 
 out_free:
 	for (i = 0; i < rcp_cnt; i++) {
-		if (skb_set[i]) {
+		if (skb_set[i])
 			kfree_skb(skb_set[i]);
-		}
+
+		if (sendctx_set[i])
+			kfree(sendctx_set[i]);
 	}
 
 out:
 	if (skb_set)
 		kfree(skb_set);
-	for (i = 0; i < rcp_cnt; i++) {
-		if (sendctx_set[i])
-			kfree(sendctx_set[i]);
-	}
 	if (sendctx_set)
 		kfree(sendctx_set);
 	kfree_skb(skb);
