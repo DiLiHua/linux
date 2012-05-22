@@ -28,6 +28,15 @@ extern struct sock *bus_peer_get(struct sock *);
 
 #define NF_BUS_SENDING 1
 
+/*
+ * AF_BUS ioctl() commands
+ *
+ * include/linux/sockios.h reserves 16 protocol private ioctl numbers
+ * from 0x89E0 to 89EF.
+ * So, let's use this range for the AF_BUS ioctl commands.
+ */
+#define SIOCSINQ 0x89E0
+
 extern unsigned int bus_tot_inflight;
 extern spinlock_t bus_table_lock;
 extern struct hlist_head bus_socket_table[BUS_HASH_SIZE + 1];

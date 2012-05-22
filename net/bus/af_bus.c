@@ -1140,6 +1140,8 @@ restart:
 
 	/* Set credentials */
 	copy_peercred(sk, other);
+	sk->sk_sndbuf = other->sk_sndbuf;
+	newsk->sk_sndbuf = other->sk_sndbuf;
 
 	sock->state	= SS_CONNECTED;
 	sk->sk_state	= TCP_ESTABLISHED;
@@ -1477,6 +1479,7 @@ out_free:
 	kfree_skb(skb);
 	if (sendctx->other)
 		sock_put(sendctx->other);
+
 	return err;
 }
 
@@ -2073,11 +2076,16 @@ long bus_outq_len(struct sock *sk)
 }
 EXPORT_SYMBOL_GPL(bus_outq_len);
 
+static inline void sk_sndbuf_set(struct sock *sk, int sndbuf)
+{
+	sk->sk_sndbuf = sndbuf;
+}
+
 static int bus_ioctl(struct socket *sock, unsigned int cmd, unsigned long arg)
 {
 	struct sock *sk = sock->sk;
 	long amount = 0;
-	int err;
+	int err, sndbuf;
 
 	switch (cmd) {
 	case SIOCOUTQ:
@@ -2090,6 +2098,20 @@ static int bus_ioctl(struct socket *sock, unsigned int cmd, unsigned long arg)
 			err = amount;
 		else
 			err = put_user(amount, (int __user *)arg);
+		break;
+	case SIOCSINQ:
+		if (sk->sk_state != TCP_LISTEN)
+			err = -EINVAL;
+		else {
+			err = -EFAULT;
+
+			if (get_user(sndbuf, (int __user *)arg))
+				break;
+
+			err = 0;
+			sk_sndbuf_set(sk, sndbuf);
+			break;
+		}
 		break;
 	default:
 		err = -ENOIOCTLCMD;
