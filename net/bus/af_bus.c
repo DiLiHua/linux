@@ -2245,7 +2245,7 @@ static int bus_seq_show(struct seq_file *seq, void *v)
 {
 
 	if (v == SEQ_START_TOKEN)
-		seq_puts(seq, "Num       RefCount Protocol Flags    Type St "
+		seq_puts(seq, "Num       RefCount Protocol Flags    Type St " \
 			 "Inode Path\n");
 	else {
 		struct sock *s = v;
