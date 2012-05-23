@@ -133,25 +133,6 @@ static inline bool bus_mc_addr(struct sockaddr_bus *sbusaddr)
 	return bus_addr_client(sbusaddr) == BUS_CLIENT_MASK;
 }
 
-static inline bool bus_same_bus(struct sockaddr_bus *sbusaddr1,
-				struct sockaddr_bus *sbusaddr2)
-{
-	int offset;
-
-	if (sbusaddr1->sbus_path[0] != sbusaddr2->sbus_path[0])
-		return false;
-
-	/*
-	 * abstract path names start with a null byte character,
-	 * so they have to be compared starting at the second char.
-	 */
-	offset = (sbusaddr1->sbus_path[0] == '\0');
-
-	return !strncmp(sbusaddr1->sbus_path + offset,
-		       sbusaddr2->sbus_path + offset,
-		       BUS_PATH_MAX);
-}
-
 struct sock *bus_peer_get(struct sock *s)
 {
 	struct sock *peer;
