@@ -1639,10 +1639,6 @@ static int bus_dgram_sendmsg(struct kiocb *kiocb, struct socket *sock,
 	bool to_master = false;
 	struct bus_send_context sendctx;
 
-	sendctx.namelen = 0; /* fake GCC */
-	sendctx.siocb = kiocb_to_siocb(kiocb);
-	sendctx.other = NULL;
-
 	if (sbusaddr && !bus_same_bus(sbusaddr, u->addr->name))
 		return -EHOSTUNREACH;
 
@@ -1651,6 +1647,10 @@ static int bus_dgram_sendmsg(struct kiocb *kiocb, struct socket *sock,
 		to_master = true;
 	else if (sbusaddr && !u->bus_master_side && !u->authenticated)
 		return -EHOSTUNREACH;
+
+	sendctx.namelen = 0; /* fake GCC */
+	sendctx.siocb = kiocb_to_siocb(kiocb);
+	sendctx.other = NULL;
 
 	if (NULL == sendctx.siocb->scm)
 		sendctx.siocb->scm = &tmp_scm;
