@@ -1616,6 +1616,22 @@ out:
 	return err;
 }
 
+static inline bool bus_same_bus(struct sockaddr_bus *sbusaddr1,
+				struct sockaddr_bus *sbusaddr2)
+{
+	int offset, path_len;
+
+	if (sbusaddr1->sbus_path[0] != sbusaddr2->sbus_path[0])
+		return false;
+
+	offset = (sbusaddr1->sbus_path[0] == '\0');
+	path_len = strlen(sbusaddr1->sbus_path + offset);
+
+	return !memcmp(sbusaddr1->sbus_path + offset,
+		       sbusaddr2->sbus_path + offset,
+		       path_len);
+}
+
 static int bus_dgram_sendmsg(struct kiocb *kiocb, struct socket *sock,
 			      struct msghdr *msg, size_t len)
 {
@@ -1631,6 +1647,9 @@ static int bus_dgram_sendmsg(struct kiocb *kiocb, struct socket *sock,
 	sendctx.namelen = 0; /* fake GCC */
 	sendctx.siocb = kiocb_to_siocb(kiocb);
 	sendctx.other = NULL;
+
+	if (sbusaddr && !bus_same_bus(sbusaddr, u->addr->name))
+		return -EHOSTUNREACH;
 
 	if ((!sbusaddr && !u->bus_master_side) ||
 	    (sbusaddr && sbusaddr->sbus_addr.s_addr == BUS_MASTER_ADDR))
