@@ -1623,6 +1623,9 @@ static int bus_dgram_sendmsg(struct kiocb *kiocb, struct socket *sock,
 	bool to_master = false;
 	struct bus_send_context sendctx;
 
+	if (!msg->msg_namelen)
+		sbusaddr = NULL;
+
 	if (sbusaddr && !bus_same_bus(sbusaddr, u->addr->name))
 		return -EHOSTUNREACH;
 
@@ -1647,13 +1650,12 @@ static int bus_dgram_sendmsg(struct kiocb *kiocb, struct socket *sock,
 	if (msg->msg_flags&MSG_OOB)
 		goto out;
 
-	if (msg->msg_namelen && !to_master) {
+	if (sbusaddr && !to_master) {
 		err = bus_mkname(sbusaddr, msg->msg_namelen, &sendctx.hash);
 		if (err < 0)
 			goto out;
 		sendctx.namelen = err;
 	} else {
-		sbusaddr = NULL;
 		err = -ENOTCONN;
 		sendctx.other = bus_peer_get(sk);
 		if (!sendctx.other)
