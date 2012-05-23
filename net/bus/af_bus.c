@@ -133,6 +133,25 @@ static inline bool bus_mc_addr(struct sockaddr_bus *sbusaddr)
 	return bus_addr_client(sbusaddr) == BUS_CLIENT_MASK;
 }
 
+static inline bool bus_same_bus(struct sockaddr_bus *sbusaddr1,
+				struct sockaddr_bus *sbusaddr2)
+{
+	int offset;
+
+	if (sbusaddr1->sbus_path[0] != sbusaddr2->sbus_path[0])
+		return false;
+
+	/*
+	 * abstract path names start with a null byte character,
+	 * so they have to be compared starting at the second char.
+	 */
+	offset = (sbusaddr1->sbus_path[0] == '\0');
+
+	return !strncmp(sbusaddr1->sbus_path + offset,
+		       sbusaddr2->sbus_path + offset,
+		       BUS_PATH_MAX);
+}
+
 struct sock *bus_peer_get(struct sock *s)
 {
 	struct sock *peer;
@@ -168,7 +187,7 @@ static int bus_mkname(struct sockaddr_bus *sbusaddr, int len, unsigned *hashp)
 	if (!sbusaddr || sbusaddr->sbus_family != AF_BUS)
 		return -EINVAL;
 
-	len = strlen(sbusaddr->sbus_path + offset) + 1 +
+	len = strnlen(sbusaddr->sbus_path + offset, BUS_PATH_MAX) + 1 +
 		sizeof(__kernel_sa_family_t) +
 		sizeof(struct bus_addr);
 
@@ -328,7 +347,7 @@ static struct sock *__bus_find_socket_byaddress(struct net *net,
 	struct hlist_node *node;
 	struct bus_sock *u;
 	int offset = (sbusname->sbus_path[0] == '\0');
-	int path_len = strlen(sbusname->sbus_path + offset);
+	int path_len = strnlen(sbusname->sbus_path + offset, BUS_PATH_MAX);
 
 	len = path_len + 1 + sizeof(__kernel_sa_family_t) +
 	      sizeof(struct bus_addr);
@@ -347,9 +366,7 @@ static struct sock *__bus_find_socket_byaddress(struct net *net,
 		if (addr->len == len &&
 		    addr->name->sbus_family == sbusname->sbus_family &&
 		    addr->name->sbus_addr.s_addr == sbusname->sbus_addr.s_addr &&
-		    !memcmp(addr->name->sbus_path + offset,
-			    sbusname->sbus_path + offset,
-			    path_len))
+		    bus_same_bus(addr->name, sbusname))
 			goto found;
 	}
 	s = NULL;
@@ -1608,22 +1625,6 @@ out:
 	scm_destroy(sendctx->siocb->scm);
 
 	return err;
-}
-
-static inline bool bus_same_bus(struct sockaddr_bus *sbusaddr1,
-				struct sockaddr_bus *sbusaddr2)
-{
-	int offset, path_len;
-
-	if (sbusaddr1->sbus_path[0] != sbusaddr2->sbus_path[0])
-		return false;
-
-	offset = (sbusaddr1->sbus_path[0] == '\0');
-	path_len = strlen(sbusaddr1->sbus_path + offset);
-
-	return !memcmp(sbusaddr1->sbus_path + offset,
-		       sbusaddr2->sbus_path + offset,
-		       path_len);
 }
 
 static int bus_dgram_sendmsg(struct kiocb *kiocb, struct socket *sock,
