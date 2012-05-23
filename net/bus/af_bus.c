@@ -306,9 +306,9 @@ found:
 }
 
 static inline struct sock *bus_find_socket_byname(struct net *net,
-						   struct sockaddr_bus *sbusname,
-						   int len, int type,
-						   unsigned hash)
+						  struct sockaddr_bus *sbusname,
+						  int len, int type,
+						  unsigned hash)
 {
 	struct sock *s;
 
@@ -776,7 +776,8 @@ static struct sock *bus_find_other(struct net *net,
 		err = -ECONNREFUSED;
 		if (!S_ISSOCK(inode->i_mode))
 			goto put_fail;
-		u = bus_find_socket_byaddress(net, sbusname, len, type, protocol, hash);
+		u = bus_find_socket_byaddress(net, sbusname, len, type,
+					      protocol, hash);
 		if (!u)
 			goto put_fail;
 
@@ -792,7 +793,8 @@ static struct sock *bus_find_other(struct net *net,
 		}
 	} else {
 		err = -ECONNREFUSED;
-		u = bus_find_socket_byaddress(net, sbusname, len, type, protocol, hash);
+		u = bus_find_socket_byaddress(net, sbusname, len, type,
+					      protocol, hash);
 		if (u) {
 			struct dentry *dentry;
 			dentry = bus_sk(u)->path.dentry;
@@ -910,7 +912,8 @@ out_mknod_drop_write:
 
 		list = &bus_socket_table[addr->hash];
 	} else {
-		list = &bus_socket_table[dentry->d_inode->i_ino & (BUS_HASH_SIZE-1)];
+		list = &bus_socket_table[dentry->d_inode->i_ino &
+					 (BUS_HASH_SIZE-1)];
 		u->path = path;
 	}
 
@@ -1115,7 +1118,8 @@ restart:
 	if (otheru->addr && otheru->bus_master) {
 		atomic_inc(&otheru->addr->refcnt);
 		newu->addr = otheru->addr;
-		memcpy(addr->name, otheru->addr->name, sizeof(struct sockaddr_bus));
+		memcpy(addr->name, otheru->addr->name,
+		       sizeof(struct sockaddr_bus));
 		addr->len = otheru->addr->len;
 		addr->name->sbus_addr.s_addr =
 			(atomic64_inc_return(&otheru->bus->addr_cnt) &
@@ -1219,7 +1223,8 @@ out:
 }
 
 
-static int bus_getname(struct socket *sock, struct sockaddr *uaddr, int *uaddr_len, int peer)
+static int bus_getname(struct socket *sock, struct sockaddr *uaddr,
+		       int *uaddr_len, int peer)
 {
 	struct sock *sk = sock->sk;
 	struct bus_sock *u;
@@ -1318,7 +1323,8 @@ static int bus_attach_fds(struct scm_cookie *scm, struct sk_buff *skb)
 	return max_level;
 }
 
-static int bus_scm_to_skb(struct scm_cookie *scm, struct sk_buff *skb, bool send_fds)
+static int bus_scm_to_skb(struct scm_cookie *scm, struct sk_buff *skb,
+			  bool send_fds)
 {
 	int err = 0;
 
@@ -1447,7 +1453,8 @@ restart:
 			goto out_unlock;
 		}
 
-		sendctx->timeo = bus_wait_for_peer(sendctx->other, sendctx->timeo);
+		sendctx->timeo = bus_wait_for_peer(sendctx->other,
+						   sendctx->timeo);
 
 		err = sock_intr_errno(sendctx->timeo);
 		if (signal_pending(current))
@@ -1521,7 +1528,8 @@ static int bus_dgram_sendmsg_mcast(struct sk_buff *skb)
 		goto out;
 	}
 
-	sendctx_set = kmalloc(sizeof(struct bus_send_context *) * rcp_cnt, GFP_KERNEL);
+	sendctx_set = kmalloc(sizeof(struct bus_send_context *) * rcp_cnt,
+			      GFP_KERNEL);
 	if (!sendctx_set) {
 		err = -ENOMEM;
 		goto out;
