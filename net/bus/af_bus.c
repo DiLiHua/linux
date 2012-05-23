@@ -48,11 +48,11 @@
 #include <linux/security.h>
 
 struct hlist_head bus_socket_table[BUS_HASH_SIZE + 1];
-struct hlist_head bus_address_table[BUS_HASH_SIZE];
 EXPORT_SYMBOL_GPL(bus_socket_table);
+struct hlist_head bus_address_table[BUS_HASH_SIZE];
+EXPORT_SYMBOL_GPL(bus_table_lock);
 DEFINE_SPINLOCK(bus_table_lock);
 DEFINE_SPINLOCK(bus_address_lock);
-EXPORT_SYMBOL_GPL(bus_table_lock);
 static atomic_long_t bus_nr_socks;
 
 #define bus_sockets_unbound	(&bus_socket_table[BUS_HASH_SIZE])
