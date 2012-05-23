@@ -1,7 +1,10 @@
 /*
  * Implementation of Bus domain sockets.
  *
- * Authors:	Javier Martinez Canillas, <javier@collabora.co.uk>
+ * Copyright (c) 2012, Collabora, Ltd.
+ *
+ * Authors:	Javier Martinez Canillas, <javier.martinez@collabora.co.uk>
+ *              Alban Crequy, <alban.crequy@collabora.co.uk>
  *
  *		This program is free software; you can redistribute it and/or
  *		modify it under the terms of the GNU General Public License
@@ -2372,5 +2375,7 @@ static void __exit af_bus_exit(void)
 fs_initcall(af_bus_init);
 module_exit(af_bus_exit);
 
+MODULE_AUTHOR("Alban Crequy, Javier Martinez Canillas");
+MODULE_DESCRIPTION("Linux Bus domain sockets");
 MODULE_LICENSE("GPL");
 MODULE_ALIAS_NETPROTO(PF_BUS);
