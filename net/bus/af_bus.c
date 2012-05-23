@@ -1439,12 +1439,6 @@ restart:
 	if (sendctx->other->sk_shutdown & RCV_SHUTDOWN)
 		goto out_unlock;
 
-	if (sk->sk_type != SOCK_SEQPACKET) {
-		err = security_bus_may_send(sk->sk_socket, sendctx->other->sk_socket);
-		if (err)
-			goto out_unlock;
-	}
-
 	/* FIXME: The blocking thing needs rewriting... it will get tricky with
 	 multicast :) */
 	if (bus_peer(sendctx->other) != sk && bus_recvq_full(sendctx->other)) {
