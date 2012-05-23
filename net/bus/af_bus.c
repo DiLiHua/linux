@@ -905,8 +905,7 @@ out_mknod_drop_write:
 		if (__bus_find_socket_byname(net, sbusaddr, addr_len,
 					      sk->sk_type, hash)) {
 			bus_release_addr(addr);
-			if (bus)
-				kfree(bus);
+			kfree(bus);
 			goto out_unlock;
 		}
 
@@ -1601,13 +1600,10 @@ out_free:
 	}
 
 out:
-	if (skb_set)
-		kfree(skb_set);
+	kfree(skb_set);
 	if (sendctx_set) {
-		for (i = 0; i < rcp_cnt; i++) {
-			if (sendctx_set[i])
-				kfree(sendctx_set[i]);
-		}
+		for (i = 0; i < rcp_cnt; i++)
+			kfree(sendctx_set[i]);
 		kfree(sendctx_set);
 	}
 	kfree_skb(skb);
