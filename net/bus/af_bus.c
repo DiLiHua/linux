@@ -722,9 +722,8 @@ static int bus_create(struct net *net, struct socket *sock, int protocol,
 	if (protocol < BUS_PROTO_NONE || protocol > BUS_PROTO_DBUS)
 		return -EPROTONOSUPPORT;
 
-	if (protocol != BUS_PROTO_NONE) {
+	if (protocol != BUS_PROTO_NONE)
 		request_module("net-pf-%d-proto-%d", PF_BUS, protocol);
-	}
 
 	sock->state = SS_UNCONNECTED;
 
