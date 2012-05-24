@@ -4139,25 +4139,6 @@ static int selinux_socket_bus_stream_connect(struct sock *sock,
 	return 0;
 }
 
-
-static int selinux_socket_bus_may_send(struct socket *sock,
-				       struct socket *other)
-{
-	struct sk_security_struct *ssec = sock->sk->sk_security;
-	struct sk_security_struct *osec = other->sk->sk_security;
-	struct common_audit_data ad;
-	struct selinux_audit_data sad = {0,};
-	struct lsm_network_audit net = {0,};
-
-	COMMON_AUDIT_DATA_INIT(&ad, NET);
-	ad.selinux_audit_data = &sad;
-	ad.u.net = &net;
-	ad.u.net->sk = other->sk;
-
-	return avc_has_perm(ssec->sid, osec->sid, osec->sclass, SOCKET__SENDTO,
-			    &ad);
-}
-
 static int selinux_inet_sys_rcv_skb(int ifindex, char *addrp, u16 family,
 				    u32 peer_sid,
 				    struct common_audit_data *ad)
@@ -5713,7 +5694,6 @@ static struct security_operations selinux_ops = {
 	.unix_stream_connect =		selinux_socket_unix_stream_connect,
 	.unix_may_send =		selinux_socket_unix_may_send,
 	.bus_stream_connect =		selinux_socket_bus_stream_connect,
-	.bus_may_send =			selinux_socket_bus_may_send,
 
 	.socket_create =		selinux_socket_create,
 	.socket_post_create =		selinux_socket_post_create,
