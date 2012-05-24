@@ -1981,22 +1981,25 @@ static int bus_join_bus(struct sock *sk)
 	struct bus_sock *u = bus_sk(sk), *peeru;
 	int err = 0;
 
-	if (!u->bus_master_side)
-		return -EINVAL;
-
-	if (sk->sk_state != TCP_ESTABLISHED)
-		return -ENOTCONN;
-
 	peer = bus_peer_get(sk);
 	if (!peer)
 		return -ENOTCONN;
+	peeru = bus_sk(peer);
+
+	if (!u->bus_master_side || peeru->authenticated) {
+		err = -EINVAL;
+		goto sock_put_out;
+	}
+
+	if (sk->sk_state != TCP_ESTABLISHED) {
+		err = -ENOTCONN;
+		goto sock_put_out;
+	}
 
 	if (peer->sk_shutdown != 0) {
 		err = -ENOTCONN;
 		goto sock_put_out;
 	}
-
-	peeru = bus_sk(peer);
 
 	bus_state_lock(peer);
 	peeru->authenticated = true;
