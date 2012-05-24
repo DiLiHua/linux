@@ -1918,8 +1918,10 @@ static int bus_add_addr(struct sock *sk, struct bus_addr *sbus_addr)
 	int ret = 0;
 
 	addr = kzalloc(sizeof(*addr) + sizeof(struct sockaddr_bus), GFP_KERNEL);
-	if (!addr)
-		return -ENOMEM;
+	if (!addr) {
+		ret = -ENOMEM;
+		goto out;
+	}
 
 	memcpy(addr->name, u->addr->name, sizeof(struct sockaddr_bus));
 	addr->len = u->addr->len;
@@ -2025,20 +2027,20 @@ static int bus_setsockopt(struct socket *sock, int level, int optname,
 
 	switch (optname) {
 	case BUS_ADD_ADDR:
-		if (optlen < sizeof(struct bus_addr))
-			return -EINVAL;
-		if (copy_from_user(&addr, optval, sizeof(struct bus_addr)))
-			return -EFAULT;
-
-		res = bus_add_addr(bus_peer_get(sock->sk), &addr);
-		break;
 	case BUS_DEL_ADDR:
 		if (optlen < sizeof(struct bus_addr))
 			return -EINVAL;
+
+		if (!bus_sk(sock->sk)->bus_master_side)
+			return -EINVAL;
+
 		if (copy_from_user(&addr, optval, sizeof(struct bus_addr)))
 			return -EFAULT;
 
-		res = bus_del_addr(bus_peer_get(sock->sk), &addr);
+		if (optname == BUS_ADD_ADDR)
+			res = bus_add_addr(bus_peer_get(sock->sk), &addr);
+		else
+			res = bus_del_addr(bus_peer_get(sock->sk), &addr);
 		break;
 	case BUS_JOIN_BUS:
 		res = bus_join_bus(sock->sk);
