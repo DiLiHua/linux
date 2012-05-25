@@ -2579,12 +2579,6 @@ static inline int security_unix_may_send(struct socket *sock,
 	return 0;
 }
 
-static inline int security_bus_may_send(struct socket *sock,
-					 struct socket *other)
-{
-	return 0;
-}
-
 static inline int security_socket_create(int family, int type,
 					 int protocol, int kern)
 {
