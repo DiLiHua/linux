@@ -119,3 +119,6 @@ obj-$(CONFIG_IP_SET) += ipset/
 
 # IPVS
 obj-$(CONFIG_IP_VS) += ipvs/
+
+# Dbus
+obj-$(CONFIG_NETFILTER_DBUS) += nfdbus/
