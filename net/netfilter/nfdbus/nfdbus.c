@@ -235,12 +235,6 @@ static void cn_cmd_cb(struct cn_msg *msg, struct netlink_skb_parms *nsp)
                 struct bus_match_rule *rule;
 		struct bus_match_maker *matchmaker;
 	        reply->ret_code = 0;
-                pr_debug("%s: %lu: [pid = %d  uid = %d] "
-                       "idx=%x, val=%x, seq=%u, ack=%u, len=%d: %s.\n",
-                       __func__, jiffies, nsp->creds.pid, nsp->creds.uid,
-                       msg->id.idx, msg->id.val,
-                       msg->seq, msg->ack, msg->len,
-                       msg->len ? (char *)nlp->data : "");
 
                 if (msg->len == 0)
                        reply->ret_code = EINVAL;
@@ -259,10 +253,12 @@ static void cn_cmd_cb(struct cn_msg *msg, struct netlink_skb_parms *nsp)
 
                 rule = bus_match_rule_parse(nlp->data);
 		matchmaker = find_match_maker(&nlp->addr, false);
-		if (!matchmaker)
+		if (!matchmaker) {
 			reply->ret_code = EINVAL;
-		else
+		} else {
+			pr_debug("Remove match rule for matchmaker %p\n", matchmaker);
 			bus_matchmaker_remove_rule_by_value(matchmaker, rule);
+		}
 		bus_match_rule_unref(rule);
 		
 	        reply->ret_code = 0;
