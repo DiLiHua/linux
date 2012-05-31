@@ -1668,6 +1668,28 @@ static int bus_dgram_sendmsg(struct kiocb *kiocb, struct socket *sock,
 	if (len > sk->sk_sndbuf - 32)
 		goto out;
 
+	sendctx.timeo = sock_sndtimeo(sk, msg->msg_flags & MSG_DONTWAIT);
+
+restart:
+	bus_state_lock(sk);
+	if (bus_recvq_full(sk)) {
+		err = -EAGAIN;
+		if (!sendctx.timeo) {
+			bus_state_unlock(sk);
+			goto out;
+		}
+
+		sendctx.timeo = bus_wait_for_peer(sk, sendctx.timeo);
+
+		err = sock_intr_errno(sendctx.timeo);
+		if (signal_pending(current))
+			goto out;
+
+		goto restart;
+	} else {
+		bus_state_unlock(sk);
+	}
+
 	skb = sock_alloc_send_skb(sk, len, msg->msg_flags&MSG_DONTWAIT, &err);
 	if (skb == NULL)
 		goto out;
@@ -1682,8 +1704,6 @@ static int bus_dgram_sendmsg(struct kiocb *kiocb, struct socket *sock,
 	err = memcpy_fromiovec(skb_put(skb, len), msg->msg_iov, len);
 	if (err)
 		goto out_free;
-
-	sendctx.timeo = sock_sndtimeo(sk, msg->msg_flags & MSG_DONTWAIT);
 
 	sendctx.sender_socket = sock;
 	if (u->bus_master_side && sendctx.other) {
@@ -2125,6 +2145,8 @@ static unsigned int bus_dgram_poll(struct file *file, struct socket *sock,
 {
 	struct sock *sk = sock->sk, *other;
 	unsigned int mask, writable;
+	struct bus_sock *u = bus_sk(sk), *p;
+	struct hlist_node *node;
 
 	sock_poll_wait(file, sk_sleep(sk), wait);
 	mask = 0;
@@ -2163,6 +2185,29 @@ static unsigned int bus_dgram_poll(struct file *file, struct socket *sock,
 				writable = 0;
 		}
 		sock_put(other);
+	}
+
+	if (bus_recvq_full(sk)) {
+		sock_poll_wait(file, &u->peer_wait, wait);
+		writable = 0;
+	}
+
+	/*
+	 * If the socket has already joined the bus we have to check
+	 * that each peer receiver queue on the bus is not full.
+	 */
+	if (u->bus_master_side || u->authenticated) {
+		spin_lock(&u->bus->lock);
+		hlist_for_each_entry(p, node, &u->bus->peers, bus_node) {
+			if (&p->sk != sk) {
+				sock_poll_wait(file, &p->peer_wait, wait);
+				if (bus_recvq_full(&p->sk)) {
+					writable = 0;
+					break;
+				}
+			}
+		}
+		spin_unlock(&u->bus->lock);
 	}
 
 	if (writable)
