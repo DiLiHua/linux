@@ -52,31 +52,28 @@ static struct bus_match_maker *find_match_maker(struct sockaddr_bus *addr,
 	hash ^= hash >> 8;
 	hash &= 0xff;
 
-	printk("Looking for hash %llu\n", hash);
-
 	hlist_for_each_entry(matchmaker, node, &matchrules_table[hash],
 			     table_node) {
-		printk("  compare requested [%d %llu %s] to stored [%d %llu %s]",
-			addr->sbus_family, addr->sbus_addr.s_addr, addr->sbus_path,
-			matchmaker->addr.sbus_family,
-			matchmaker->addr.sbus_addr.s_addr,
-			matchmaker->addr.sbus_path);
 		if (addr->sbus_family == matchmaker->addr.sbus_family &&
 		    addr->sbus_addr.s_addr == matchmaker->addr.sbus_addr.s_addr &&
 		    !memcmp(addr->sbus_path, matchmaker->addr.sbus_path,
-			   path_len))
+			   path_len)) {
+			pr_debug("Found matchmaker for hash %llu", hash);
 			return matchmaker;
+		}
 	}
 
-	if (!create)
+	if (!create) {
+		pr_debug("Matchmaker for hash %llu not found", hash);
 		return NULL;
+	}
 
 	matchmaker = bus_matchmaker_new();
 	matchmaker->addr.sbus_family = addr->sbus_family;
 	matchmaker->addr.sbus_addr.s_addr = addr->sbus_addr.s_addr;
 	memcpy(matchmaker->addr.sbus_path, addr->sbus_path, BUS_PATH_MAX);
 	
-	printk("Create new matchmaker %p for hash %llu\n", matchmaker, hash);
+	pr_debug("Create new matchmaker for hash %llu\n", hash);
 	hlist_add_head(&matchmaker->table_node, &matchrules_table[hash]);
 	return matchmaker;
 }
@@ -96,7 +93,7 @@ static unsigned int dbus_filter(unsigned int hooknum,
         int err;
 
         if (!skb->sk || skb->sk->sk_family == PF_INET) { /* This is a UDP packet */
-        	printk(KERN_INFO "This is a UDP packet.\n");
+        	pr_debug("This is a UDP packet.\n");
                 data = skb->data + sizeof(struct iphdr) + sizeof(struct udphdr);
 		matchmaker = udp_matchmaker;
 		sendctx = &fake_udp_sendctx;
@@ -121,52 +118,52 @@ static unsigned int dbus_filter(unsigned int hooknum,
         len =  skb_tail_pointer(skb) - data;
 
 	if (sendctx->to_master) {
-       		printk(KERN_INFO "AF_BUS packet to the bus master. ACCEPT.\n");
+       		pr_debug("AF_BUS packet to the bus master. ACCEPT.\n");
                	return NF_ACCEPT;
 	}
 
 	if (!sendctx->multicast && !sendctx->bus_master_side) {
-       		printk(KERN_INFO "AF_BUS packet from a peer to a peer (unicast). ACCEPT.\n");
+       		pr_debug("AF_BUS packet from a peer to a peer (unicast). ACCEPT.\n");
                	return NF_ACCEPT;
 	}
 
         err = dbus_message_parse(data, len, &msg);
         if (err) {
 		if (sendctx->bus_master_side) {
-	       		printk(KERN_INFO "AF_BUS packet from bus master is not parsable. ACCEPT.\n");
+	       		pr_debug("AF_BUS packet from bus master is not parsable. ACCEPT.\n");
 	                return NF_ACCEPT;
 		} else {
-	       		printk(KERN_INFO "AF_BUS packet from peer is not parsable. DROP.\n");
+	       		pr_debug("AF_BUS packet from peer is not parsable. DROP.\n");
 	                return NF_DROP;
 		}
 	}
 
 	if (sendctx->bus_master_side) {
 		if (msg.name_acquired) {
-       			printk(KERN_INFO "New name: %s [%p %p].\n",
+       			pr_debug("New name: %s [%p %p].\n",
 			       msg.name_acquired, sendctx->sender, sendctx->recipient);
 
 			sender = find_match_maker(sendctx->sender, true);
 			bus_matchmaker_add_name(sender, msg.name_acquired);
 		}
 		if (msg.name_lost) {
-       			printk(KERN_INFO "Lost name: %s [%p %p].\n",
+       			pr_debug("Lost name: %s [%p %p].\n",
 			       msg.name_lost, sendctx->sender, sendctx->recipient);
 
 			sender = find_match_maker(sendctx->sender, true);
 			bus_matchmaker_remove_name(sender, msg.name_acquired);
 		}
 
-       		printk(KERN_INFO "AF_BUS packet '%s' from the bus master. ACCEPT.\n",
+       		pr_debug("AF_BUS packet '%s' from the bus master. ACCEPT.\n",
 		       msg.member ? msg.member : "");
                	return NF_ACCEPT;
 	}
 
-       	printk(KERN_INFO "Multicast AF_BUS packet, %d bytes, "
+       	pr_debug("Multicast AF_BUS packet, %d bytes, "
 	       "considering recipient %lld...\n", len,
 	       sendctx->recipient ? sendctx->recipient->sbus_addr.s_addr : 0);
 
-        printk(KERN_INFO "Message type %d %s->%s [iface: %s][member: %s][matchmaker=%p]...\n",
+        pr_debug("Message type %d %s->%s [iface: %s][member: %s][matchmaker=%p]...\n",
 	       msg.type,
 	       msg.sender ? msg.sender : "",
 	       msg.destination ? msg.destination : "",
@@ -175,17 +172,17 @@ static unsigned int dbus_filter(unsigned int hooknum,
 	       matchmaker);
 
 	if (!matchmaker) {
-       		printk(KERN_INFO "No match rules for this recipient. DROP.\n");
+       		pr_debug("No match rules for this recipient. DROP.\n");
 		return NF_DROP;
 	}
 
 	sender = find_match_maker(sendctx->sender, true);
         err = bus_matchmaker_filter(matchmaker, sender, &msg);
         if (err) {
-       		printk(KERN_INFO "Matchmaker: ACCEPT.\n");
+       		pr_debug("Matchmaker: ACCEPT.\n");
                 return NF_ACCEPT;
         } else {
-       		printk(KERN_INFO "Matchmaker: DROP.\n");
+       		pr_debug("Matchmaker: DROP.\n");
                 return NF_DROP;
 	}
 }
@@ -213,7 +210,7 @@ static unsigned int udp_filter(unsigned int hooknum,
                 return NF_ACCEPT;
 
         if (ntohs(udphdr->dest) == 4249) {
-                printk(KERN_INFO "Got a packet with UDP port %d.\n", ntohs(udphdr->dest));
+                pr_debug("Got a packet with UDP port %d.\n", ntohs(udphdr->dest));
                 return dbus_filter(hooknum, skb, in, out, okfn);
         }
 
@@ -241,7 +238,7 @@ static void nfdbus_nl_send_reply(struct cn_msg *msg, int ret_code)
 
 	rr = cn_netlink_send(cn_reply, 0, GFP_NOIO);
 	if (rr && rr != -ESRCH)
-		printk(KERN_INFO "nfdbus: cn_netlink_send()=%d\n", rr);
+		pr_debug("nfdbus: cn_netlink_send()=%d\n", rr);
 }
 
 static void cn_cmd_cb(struct cn_msg *msg, struct netlink_skb_parms *nsp)
@@ -253,16 +250,16 @@ static void cn_cmd_cb(struct cn_msg *msg, struct netlink_skb_parms *nsp)
 	int reply_size = sizeof(struct cn_msg)
 		+ sizeof(struct nfdbus_nl_cfg_reply);
 
-	printk(KERN_INFO "nfdbus: cn_cmd_cb called nsp->pid=%d.\n", nsp->pid);
+	pr_debug("nfdbus: cn_cmd_cb called nsp->pid=%d.\n", nsp->pid);
 
 	if (!try_module_get(THIS_MODULE)) {
-		printk(KERN_ERR "nfdbus: try_module_get() failed!\n");
+		pr_debug(KERN_ERR "nfdbus: try_module_get() failed!\n");
 		return;
 	}
 
 	/*
         if (!cap_raised(current_cap(), CAP_SYS_ADMIN)) {
-		printk(KERN_ERR "nfdbus: no CAP_SYS_ADMIN!\n");
+		pr_debug(KERN_ERR "nfdbus: no CAP_SYS_ADMIN!\n");
 		retcode = EPERM;
 		goto fail;
 	}
@@ -281,7 +278,7 @@ static void cn_cmd_cb(struct cn_msg *msg, struct netlink_skb_parms *nsp)
                 struct bus_match_rule *rule;
 		struct bus_match_maker *matchmaker;
 	        reply->ret_code = 0;
-                printk(KERN_INFO "%s: %lu: [pid = %d  uid = %d] "
+                pr_debug("%s: %lu: [pid = %d  uid = %d] "
                        "idx=%x, val=%x, seq=%u, ack=%u, len=%d: %s.\n",
                        __func__, jiffies, nsp->creds.pid, nsp->creds.uid,
                        msg->id.idx, msg->id.val,
@@ -294,7 +291,7 @@ static void cn_cmd_cb(struct cn_msg *msg, struct netlink_skb_parms *nsp)
                 rule = bus_match_rule_parse(nlp->data);
 		if (rule) {
 			matchmaker = find_match_maker(&nlp->addr, true);
-			printk(KERN_INFO "Add match rule for matchmaker %p\n", matchmaker);
+			pr_debug("Add match rule for matchmaker %p\n", matchmaker);
 	                bus_matchmaker_add_rule(matchmaker, rule);
 		} else {
 	        	reply->ret_code = EINVAL;
@@ -324,8 +321,8 @@ static void cn_cmd_cb(struct cn_msg *msg, struct netlink_skb_parms *nsp)
 
 	rr = cn_netlink_reply(cn_reply, nsp->pid, GFP_KERNEL);
 	if (rr && rr != -ESRCH)
-		printk(KERN_INFO "nfdbus: cn_netlink_send()=%d\n", rr);
-	printk(KERN_INFO "nfdbus: cn_netlink_reply(pid=%d)=%d\n", nsp->pid, rr);
+		pr_debug("nfdbus: cn_netlink_send()=%d\n", rr);
+	pr_debug("nfdbus: cn_netlink_reply(pid=%d)=%d\n", nsp->pid, rr);
 
 	kfree(cn_reply);
 	module_put(THIS_MODULE);
@@ -339,7 +336,7 @@ static int __init nfdbus_init(void)
 {
         int err;
 
-        printk(KERN_INFO "Hello Netfilter D-Bus!!\n");
+        pr_debug("Loading netfilter_dbus\n");
 
         /* Install D-Bus netfilter hook */
         nfho_dbus.hook     = dbus_filter;
@@ -350,7 +347,7 @@ static int __init nfdbus_init(void)
         err = nf_register_hook(&nfho_dbus);
         if (err)
                 return err;
-        printk(KERN_INFO "Netfilter hook for D-Bus: installed.\n");
+        pr_debug("Netfilter hook for D-Bus: installed.\n");
 
         /* Install fake-UDP netfilter hook */
         nfho_udp.hook     = udp_filter;
@@ -361,13 +358,13 @@ static int __init nfdbus_init(void)
         err = nf_register_hook(&nfho_udp);
         if (err)
                 goto err_nf_udp;
-        printk(KERN_INFO "Netfilter hook for UDP: installed.\n");
+        pr_debug("Netfilter hook for UDP: installed.\n");
 
         /* Install connector hook */
         err = cn_add_callback(&cn_cmd_id, "nfdbus", cn_cmd_cb);
         if (err)
                 goto err_cn_cmd_out;
-        printk(KERN_INFO "Connector hook: installed.\n");
+        pr_debug("Connector hook: installed.\n");
 
 	/* On UDP tests, we don't have buses and sendctx, so we generate fake
 	 * ones
@@ -411,7 +408,7 @@ static void __exit nfdbus_cleanup(void)
 
         bus_matchmaker_free(udp_matchmaker);
 
-        printk(KERN_INFO "Goodbye Netfilter D-Bus!\n");
+        pr_debug("Unloading netfilter_dbus\n");
 }
 
 module_init(nfdbus_init);

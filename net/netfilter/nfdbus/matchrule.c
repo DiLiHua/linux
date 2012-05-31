@@ -857,10 +857,8 @@ int bus_matchmaker_add_rule(struct bus_match_maker *matchmaker,
 
 	if (rule->interface) {
 		match_rule_insert(&pool->rules_by_iface, rule);
-                printk("rule added by interface and type");
         } else {
 		hlist_add_head(&rule->list, &pool->rules_without_iface);
-                printk("rule added without interface");
         }
 
 	return 1;
@@ -1115,7 +1113,7 @@ static bool get_recipients_from_list(struct bus_match_maker *matchmaker,
 	struct bus_match_rule *rule;
 
 	if (rules == NULL) {
-                printk("no rules of this type\n");
+                pr_debug("no rules of this type\n");
 		return 0;
         }
 
@@ -1123,13 +1121,13 @@ static bool get_recipients_from_list(struct bus_match_maker *matchmaker,
 		if (match_rule_matches(matchmaker, sender, rule,
 					message, BUS_MATCH_MESSAGE_TYPE |
 					BUS_MATCH_INTERFACE)) {
-			printk("[YES] deliver with match rule \"%s\"\n", rule->rule_text);
+			pr_debug("[YES] deliver with match rule \"%s\"\n", rule->rule_text);
                         return 1;
 		} else {
-			printk("[NO]  deliver with match rule \"%s\"\n", rule->rule_text);
+			pr_debug("[NO]  deliver with match rule \"%s\"\n", rule->rule_text);
 		}
 	}
-	printk("[NO]  no match rules\n");
+	pr_debug("[NO]  no match rules\n");
 	return 0;
 }
 
