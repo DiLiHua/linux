@@ -91,8 +91,6 @@ int bus_matchmaker_add_rule(struct bus_match_maker *matchmaker,
 			    struct bus_match_rule *rule);
 void bus_matchmaker_remove_rule_by_value(struct bus_match_maker *matchmaker,
 					 struct bus_match_rule *value);
-void bus_matchmaker_remove_rule(struct bus_match_maker *matchmaker,
-				struct bus_match_rule *rule);
 
 bool bus_matchmaker_filter(struct bus_match_maker *matchmaker,
 			   struct bus_match_maker *sender,

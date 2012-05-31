@@ -925,33 +925,6 @@ static int match_rule_equal(struct bus_match_rule *a,
 	return 1;
 }
 
-void bus_matchmaker_remove_rule(struct bus_match_maker *matchmaker,
-				struct bus_match_rule *rule)
-{
-	struct rule_pool *pool;
-
-	WARN_ON(rule->message_type < 0);
-	WARN_ON(rule->message_type >= DBUS_NUM_MESSAGE_TYPES);
-
-	pool = matchmaker->rules_by_type + rule->message_type;
-
-	if (rule->interface) {
-		struct bus_match_rule *head =
-			match_rule_search(&pool->rules_by_iface,
-					  rule->interface);
-		hlist_del(&rule->list);
-		if (!hlist_empty(&head->first) && head == rule) {
-			struct bus_match_rule *next =
-				hlist_entry(head->first.first,
-					    struct bus_match_rule, list);
-			hlist_move_list(&head->first, &next->first);
-		}
-		/* XXX what _if we need to remove the rb_node entry: rb_erase */
-	} else
-		hlist_del(&rule->list);
-	/* bus_match_rule_unref (rule); // cf XXX */
-}
-
 /* Remove a single rule which is equal to the given rule by value */
 void bus_matchmaker_remove_rule_by_value(struct bus_match_maker *matchmaker,
 					 struct bus_match_rule *rule)
