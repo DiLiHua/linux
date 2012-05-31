@@ -940,15 +940,32 @@ void bus_matchmaker_remove_rule_by_value(struct bus_match_maker *matchmaker,
 		struct bus_match_rule *head =
 			match_rule_search(&pool->rules_by_iface,
 					  rule->interface);
-		if (!hlist_empty(&head->first) && match_rule_equal(head, rule)) {
-			struct bus_match_rule *next =
-				hlist_entry(head->first.first,
-					    struct bus_match_rule, list);
-			hlist_move_list(&head->first, &next->first);
+
+		struct hlist_node *cur;
+		struct bus_match_rule *cur_rule;
+		hlist_for_each_entry(cur_rule, cur, &head->first, list) {
+			if (match_rule_equal(cur_rule, rule)) {
+				hlist_del(cur);
+				if (hlist_empty(&head->first))
+					rb_erase(&head->node, &pool->rules_by_iface);
+				bus_match_rule_unref(cur_rule);
+				break;
+			}
 		}
-	} else
-		hlist_del(&rule->list);
-	/* bus_match_rule_unref (rule); // cf XXX */
+	} else {
+		struct hlist_head *head = &pool->rules_without_iface;
+
+		struct hlist_node *cur;
+		struct bus_match_rule *cur_rule;
+		hlist_for_each_entry(cur_rule, cur, head, list) {
+			if (match_rule_equal(cur_rule, rule)) {
+				hlist_del(cur);
+				bus_match_rule_unref(cur_rule);
+				break;
+			}
+		}
+	}
+
 }
 
 static int connection_is_primary_owner(struct bus_match_maker *connection,
