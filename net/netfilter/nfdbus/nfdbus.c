@@ -12,29 +12,18 @@
 #include <linux/init.h>
 #include <linux/skbuff.h>
 #include <linux/netfilter.h>
-#include <linux/netfilter_ipv4.h>
-#include <linux/ip.h>
-#include <linux/udp.h>
 #include <linux/connector.h>
 #include <net/af_bus.h>
 
 #include "message.h"
 #include "matchrule.h"
 
-static struct nf_hook_ops nfho_udp;
 static struct nf_hook_ops nfho_dbus;
 
 static struct cb_id cn_cmd_id = { CN_IDX_NFDBUS, CN_VAL_NFDBUS };
 
 /* Scoped by AF_BUS address */
 struct hlist_head matchrules_table[BUS_HASH_SIZE];
-
-/* Global scope, for UDP debugging */
-struct bus_match_maker *udp_matchmaker;
-struct bus_send_context	fake_udp_sendctx;
-struct sockaddr_bus fake_udp_recipient;
-struct sockaddr_bus fake_udp_sender;
-
 
 static struct bus_match_maker *find_match_maker(struct sockaddr_bus *addr,
 		bool create)
@@ -92,28 +81,26 @@ static unsigned int dbus_filter(unsigned int hooknum,
         size_t len;
         int err;
 
-        if (!skb->sk || skb->sk->sk_family == PF_INET) { /* This is a UDP packet */
-        	pr_debug("This is a UDP packet.\n");
-                data = skb->data + sizeof(struct iphdr) + sizeof(struct udphdr);
-		matchmaker = udp_matchmaker;
-		sendctx = &fake_udp_sendctx;
-        } else { /* This is a D-Bus packet */
-                data = skb->data;
-		sendctx = BUSCB(skb).sendctx;
-		if (!sendctx || !sendctx->sender || !sendctx->sender_socket) {
-			WARN(1, "netfilter_dbus received an AF_BUS packet"
-			     " without context. This is a bug. Dropping the"
-				" packet.");
-                	return NF_DROP;
-		}
-		if (sendctx->sender_socket->sk->sk_protocol != BUS_PROTO_DBUS) {
-			/* This kernel module is for D-Bus. It must not
-			 * interfere with other users of AF_BUS. */
-                	return NF_ACCEPT;
-		}
-		if (sendctx->recipient) {
-			matchmaker = find_match_maker(sendctx->recipient, false);
-		}
+	if (!skb->sk || skb->sk->sk_family != PF_BUS) {
+		WARN(1, "netfilter_dbus received an invalid skb");
+		return NF_DROP;
+	}
+
+        data = skb->data;
+	sendctx = BUSCB(skb).sendctx;
+	if (!sendctx || !sendctx->sender || !sendctx->sender_socket) {
+		WARN(1, "netfilter_dbus received an AF_BUS packet"
+		     " without context. This is a bug. Dropping the"
+			" packet.");
+        	return NF_DROP;
+	}
+	if (sendctx->sender_socket->sk->sk_protocol != BUS_PROTO_DBUS) {
+		/* This kernel module is for D-Bus. It must not
+		 * interfere with other users of AF_BUS. */
+        	return NF_ACCEPT;
+	}
+	if (sendctx->recipient) {
+		matchmaker = find_match_maker(sendctx->recipient, false);
         }
         len =  skb_tail_pointer(skb) - data;
 
@@ -185,36 +172,6 @@ static unsigned int dbus_filter(unsigned int hooknum,
        		pr_debug("Matchmaker: DROP.\n");
                 return NF_DROP;
 	}
-}
-
-static unsigned int udp_filter(unsigned int hooknum,
-                               struct sk_buff *skb,
-                               const struct net_device *in,
-                               const struct net_device *out,
-                               int (*okfn)(struct sk_buff *))
-{
-        struct iphdr *iphdr;
-        struct udphdr *udphdr;
-
-        if (!skb)
-                return NF_ACCEPT;
-
-        iphdr = (struct iphdr *)skb_network_header(skb);
-        if (!iphdr)
-                return NF_ACCEPT;
-        if (iphdr->protocol != IPPROTO_UDP)
-                return NF_ACCEPT;
-
-        udphdr = (struct udphdr *)(skb_transport_header(skb)+sizeof(struct iphdr));
-        if (!udphdr)
-                return NF_ACCEPT;
-
-        if (ntohs(udphdr->dest) == 4249) {
-                pr_debug("Got a packet with UDP port %d.\n", ntohs(udphdr->dest));
-                return dbus_filter(hooknum, skb, in, out, okfn);
-        }
-
-        return NF_ACCEPT;
 }
 
 /* Taken from drbd_nl_send_reply() */
@@ -349,51 +306,15 @@ static int __init nfdbus_init(void)
                 return err;
         pr_debug("Netfilter hook for D-Bus: installed.\n");
 
-        /* Install fake-UDP netfilter hook */
-        nfho_udp.hook     = udp_filter;
-        nfho_udp.hooknum  = 1;
-        nfho_udp.pf       = PF_INET;
-        nfho_udp.priority = 0;
-        nfho_udp.owner = THIS_MODULE;
-        err = nf_register_hook(&nfho_udp);
-        if (err)
-                goto err_nf_udp;
-        pr_debug("Netfilter hook for UDP: installed.\n");
-
         /* Install connector hook */
         err = cn_add_callback(&cn_cmd_id, "nfdbus", cn_cmd_cb);
         if (err)
                 goto err_cn_cmd_out;
         pr_debug("Connector hook: installed.\n");
 
-	/* On UDP tests, we don't have buses and sendctx, so we generate fake
-	 * ones
-	 */
-        udp_matchmaker = bus_matchmaker_new();
-	if (!udp_matchmaker) {
-		err = -ENOMEM;
-		goto err_udp_matchmaker;
-	}
-	fake_udp_sendctx.authenticated = 1;
-	fake_udp_sendctx.bus_master_side = 0;
-	fake_udp_sendctx.to_master = 0;
-	fake_udp_sendctx.multicast = 1;
-	fake_udp_sendctx.sender = &fake_udp_sender;
-	fake_udp_sendctx.recipient = &fake_udp_recipient;
-	fake_udp_sender.sbus_family = AF_BUS;
-	fake_udp_sender.sbus_addr.s_addr = 0x0000000000000001;
-	fake_udp_recipient.sbus_family = AF_BUS;
-	fake_udp_recipient.sbus_addr.s_addr = BUS_CLIENT_MASK;
-
         return 0;
 
-err_udp_matchmaker:
-	cn_del_callback(&cn_cmd_id);
-
 err_cn_cmd_out:
-        nf_unregister_hook(&nfho_udp);
-
-err_nf_udp:
         nf_unregister_hook(&nfho_dbus);
 
         return err;
@@ -402,11 +323,8 @@ err_nf_udp:
 static void __exit nfdbus_cleanup(void)
 {
         nf_unregister_hook(&nfho_dbus);
-        nf_unregister_hook(&nfho_udp);
 
         cn_del_callback(&cn_cmd_id);
-
-        bus_matchmaker_free(udp_matchmaker);
 
         pr_debug("Unloading netfilter_dbus\n");
 }
