@@ -1282,7 +1282,8 @@ static void bus_destruct_scm(struct sk_buff *skb)
 	/* Alas, it calls VFS */
 	/* So fscking what? fput() had been SMP-safe since the last Summer */
 	scm_destroy(&scm);
-	sock_wfree(skb);
+	if (skb->sk)
+		sock_wfree(skb);
 }
 
 #define MAX_RECURSION_LEVEL 4
@@ -1333,7 +1334,7 @@ static int bus_scm_to_skb(struct scm_cookie *scm, struct sk_buff *skb,
 	if (scm->fp && send_fds)
 		err = bus_attach_fds(scm, skb);
 
-//	skb->destructor = bus_destruct_scm;
+	skb->destructor = bus_destruct_scm;
 	return err;
 }
 
