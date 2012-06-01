@@ -1359,6 +1359,19 @@ static void maybe_add_creds(struct sk_buff *skb, const struct socket *sock,
  *	Send AF_BUS data.
  */
 
+static void bus_deliver_skb(struct sk_buff *skb)
+{
+	struct bus_send_context *sendctx = BUSCB(skb).sendctx;
+	struct socket *sock = sendctx->sender_socket;
+
+	if (sock_flag(sendctx->other, SOCK_RCVTSTAMP))
+		__net_timestamp(skb);
+	maybe_add_creds(skb, sock, sendctx->other);
+	skb_queue_tail(&sendctx->other->sk_receive_queue, skb);
+	if (sendctx->max_level > bus_sk(sendctx->other)->recursion_level)
+		bus_sk(sendctx->other)->recursion_level = sendctx->max_level;
+}
+
 static int bus_dgram_sendmsg_finish(struct sk_buff *skb)
 {
 	int err;
@@ -1367,7 +1380,6 @@ static int bus_dgram_sendmsg_finish(struct sk_buff *skb)
 	struct sock *sk;
 	struct net *net;
 	size_t len = skb->len;
-	size_t newlen;
 
 	sendctx = BUSCB(skb).sendctx;
 	sock = sendctx->sender_socket;
@@ -1408,7 +1420,6 @@ restart:
 		err = len;
 		goto out_free;
 	}
-	newlen = skb->len;
 
 	bus_state_lock(sendctx->other);
 
@@ -1443,9 +1454,7 @@ restart:
 	if (sendctx->other->sk_shutdown & RCV_SHUTDOWN)
 		goto out_unlock;
 
-	/* FIXME: The blocking thing needs rewriting... it will get tricky with
-	 multicast :) */
-	if (bus_peer(sendctx->other) != sk && bus_recvq_full(sendctx->other)) {
+	if (bus_recvq_full(sendctx->other)) {
 		if (!sendctx->timeo) {
 			err = -EAGAIN;
 			goto out_unlock;
@@ -1461,21 +1470,23 @@ restart:
 		goto restart;
 	}
 
-	if (sock_flag(sendctx->other, SOCK_RCVTSTAMP))
-		__net_timestamp(skb);
-	maybe_add_creds(skb, sock, sendctx->other);
-	skb_queue_tail(&sendctx->other->sk_receive_queue, skb);
-	if (sendctx->max_level > bus_sk(sendctx->other)->recursion_level)
-		bus_sk(sendctx->other)->recursion_level = sendctx->max_level;
-	bus_state_unlock(sendctx->other);
-	sendctx->other->sk_data_ready(sendctx->other, newlen);
-	sock_put(sendctx->other);
+	if (!sendctx->multicast) {
+		bus_deliver_skb(skb);
+		bus_state_unlock(sendctx->other);
+		sendctx->other->sk_data_ready(sendctx->other, skb->len);
+		sock_put(sendctx->other);
+	} else {
+		sendctx->nf_verdict = NF_ACCEPT;
+		bus_state_unlock(sendctx->other);
+	}
+
 	return len;
 
 out_unlock:
 	bus_state_unlock(sendctx->other);
 out_free:
-	kfree_skb(skb);
+	if (!sendctx->multicast)
+		kfree_skb(skb);
 	if (sendctx->other)
 		sock_put(sendctx->other);
 
@@ -1556,10 +1567,6 @@ static int bus_dgram_sendmsg_mcast(struct sk_buff *skb)
 		sendctx_set[i]->other = NULL;
 	}
 
-	/*
-	 * FIXME: what happens if the bus->peers change between we released
-	 * the bus->lock to do the allocation and now that we want to send?
-	 */
 	send_cnt = 0;
 
 	spin_lock(&u->bus->lock);
@@ -1582,11 +1589,39 @@ static int bus_dgram_sendmsg_mcast(struct sk_buff *skb)
 
 	for (i = 0; i < send_cnt; i++) {
 		tmpctx = BUSCB(skb_set[i]).sendctx;
+		tmpctx->nf_verdict = NF_DROP;
 		sock_hold(tmpctx->other);
 		err = NF_HOOK(NFPROTO_BUS, NF_BUS_SENDING, skb_set[i],
 			      NULL, NULL, bus_dgram_sendmsg_finish);
 		if (err == -EPERM)
 			sock_put(tmpctx->other);
+	}
+
+	spin_lock(&u->bus->lock);
+
+	for (i = 0; i < send_cnt; i++) {
+		tmpctx = BUSCB(skb_set[i]).sendctx;
+		if (tmpctx->nf_verdict != NF_ACCEPT || !tmpctx->other)
+			continue;
+
+		bus_state_lock(tmpctx->other);
+		bus_deliver_skb(skb_set[i]);
+		bus_state_unlock(tmpctx->other);
+	}
+
+	spin_unlock(&u->bus->lock);
+
+	for (i = 0; i < send_cnt; i++) {
+		tmpctx = BUSCB(skb_set[i]).sendctx;
+		if (tmpctx->nf_verdict != NF_ACCEPT || !tmpctx->other) {
+			kfree_skb(skb_set[i]);
+			if (tmpctx->other)
+				sock_put(tmpctx->other);
+		} else {
+			tmpctx->other->sk_data_ready(tmpctx->other,
+						     skb_set[i]->len);
+			sock_put(tmpctx->other);
+		}
 	}
 
 	err = len;

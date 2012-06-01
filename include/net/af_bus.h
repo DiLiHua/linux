@@ -66,6 +66,7 @@ struct bus_send_context {
 	unsigned int		bus_master_side:1;
 	unsigned int		to_master:1;
 	unsigned int		multicast:1;
+	unsigned int            nf_verdict:1;
 };
 
 struct bus_skb_parms {
