@@ -1485,10 +1485,11 @@ restart:
 out_unlock:
 	bus_state_unlock(sendctx->other);
 out_free:
-	if (!sendctx->multicast)
+	if (!sendctx->multicast) {
 		kfree_skb(skb);
-	if (sendctx->other)
-		sock_put(sendctx->other);
+		if (sendctx->other)
+			sock_put(sendctx->other);
+	}
 
 	return err;
 }
@@ -1579,6 +1580,7 @@ static int bus_dgram_sendmsg_mcast(struct sk_buff *skb)
 		if (bus_has_prefix(&s->sk, prefix)) {
 			skb_set_owner_w(skb_set[send_cnt], &s->sk);
 			tmpctx = BUSCB(skb_set[send_cnt]).sendctx;
+			sock_hold(&s->sk);
 			tmpctx->other = &s->sk;
 			tmpctx->recipient = s->addr->name;
 			send_cnt++;
@@ -1590,7 +1592,6 @@ static int bus_dgram_sendmsg_mcast(struct sk_buff *skb)
 	for (i = 0; i < send_cnt; i++) {
 		tmpctx = BUSCB(skb_set[i]).sendctx;
 		tmpctx->nf_verdict = NF_DROP;
-		sock_hold(tmpctx->other);
 		err = NF_HOOK(NFPROTO_BUS, NF_BUS_SENDING, skb_set[i],
 			      NULL, NULL, bus_dgram_sendmsg_finish);
 		if (err == -EPERM)
