@@ -785,7 +785,8 @@ void fimc_adjust_mplane_format(struct fimc_fmt *fmt, u32 width, u32 height,
 			sizeimage = ALIGN(sizeimage, row_size);
 		}
 
-		plane_fmt->sizeimage = max(sizeimage, plane_fmt->sizeimage);
+		/* Spec does not allow to using app proposed size */
+		plane_fmt->sizeimage = plane_fmt->sizeimage;
 	}
 }
 
