@@ -54,6 +54,7 @@ struct hdmi_win_data {
 	unsigned int		fb_y;
 	unsigned int		fb_width;
 	unsigned int		fb_height;
+	unsigned int		fb_pitch;
 	unsigned int		src_width;
 	unsigned int		src_height;
 	unsigned int		mode_width;
@@ -555,7 +556,7 @@ static void mixer_graph_buffer(struct mixer_context *ctx, int win)
 		MXR_GRP_CFG_FORMAT_VAL(fmt), MXR_GRP_CFG_FORMAT_MASK);
 
 	/* setup geometry */
-	mixer_reg_write(res, MXR_GRAPHIC_SPAN(win), win_data->fb_width);
+	mixer_reg_write(res, MXR_GRAPHIC_SPAN(win), win_data->fb_pitch / (win_data->bpp / 8));
 
 	val  = MXR_GRP_WH_WIDTH(win_data->crtc_width);
 	val |= MXR_GRP_WH_HEIGHT(win_data->crtc_height);
@@ -763,6 +764,7 @@ static void mixer_win_mode_set(void *ctx,
 	win_data->fb_y = overlay->fb_y;
 	win_data->fb_width = overlay->fb_width;
 	win_data->fb_height = overlay->fb_height;
+	win_data->fb_pitch = overlay->pitch;
 	win_data->src_width = overlay->src_width;
 	win_data->src_height = overlay->src_height;
 
