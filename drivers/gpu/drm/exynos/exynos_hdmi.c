@@ -1810,7 +1810,10 @@ static void hdmi_v14_mode_set(struct hdmi_context *hdata,
 	int hcorrect = 0;
 	int vcorrect = 0;
 
-	if ((m->vdisplay == 768 && m->hdisplay == 1024) || (m->vdisplay == 1024 && m->hdisplay == 1280)) {
+	if ((m->vdisplay == 768 && m->hdisplay == 1024) ||
+			(m->vdisplay == 1024 && m->hdisplay == 1280) ||
+			(m->vdisplay == 864 && m->hdisplay == 1152) ||
+			(m->vdisplay == 960 && m->hdisplay == 1280)) {
 		pr_info("exynos-drm: Applying 257px timings hack\n");
 		hcorrect = 257;
 		vcorrect = 1;
