@@ -1100,6 +1100,14 @@ static int hdmi_v14_check_timing(struct fb_videomode *check_timing)
 	if (check_timing->xres == 800 && check_timing->yres == 600)
 		return -EINVAL;
 
+	/* This resolution results in no signal on my Panasonic TV */
+	if (check_timing->xres == 1440 && check_timing->yres == 480 && check_timing->vmode & FB_VMODE_INTERLACED)
+		return -EINVAL;
+
+	/* This resolution is displayed with bad deinterlacing and really flickery */
+	if (check_timing->xres == 1440 && check_timing->yres == 576 && check_timing->vmode & FB_VMODE_INTERLACED)
+		return -EINVAL;
+
 	for (i = 0; i < ARRAY_SIZE(hdmiphy_v14_configs); i++)
 		if (hdmiphy_v14_configs[i].pixel_clock ==
 			check_timing->pixclock)
