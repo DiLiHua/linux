@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2012-2013 ARM Limited. All rights reserved.
+ * Copyright (C) 2013-2015 ARM Limited. All rights reserved.
  * 
  * This program is free software and is provided to you under the terms of the GNU General Public License version 2
  * as published by the Free Software Foundation, and any use by you of this program is subject to the terms of such GNU licence.
@@ -8,10 +8,10 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
  */
 
-#ifndef __MALI_PROFILING_GATOR_API_H__
-#define __MALI_PROFILING_GATOR_API_H__
 
-/* Simple wrapper in order to find the OS specific location of this file */
-#include <linux/mali/mali_utgard_profiling_gator_api.h>
+void mali_allocation_unref(struct mali_mem_allocation **alloc);
 
-#endif /* __MALI_PROFILING_GATOR_API_H__ */
+void mali_allocation_ref(struct mali_mem_allocation *alloc);
+
+void mali_free_session_allocations(struct mali_session_data *session);
+
