@@ -1,8 +1,11 @@
 /*
- *  cht_bsw_es8316.c - ASoc Machine driver for Intel Byt/CHT CR platform
+ *  bytbyt_cht_es8316.c - ASoc Machine driver for Intel Baytrail/Cherrytrail
+ *                    platforms with Everest ES8316 SoC
  *
- *  Author: David Yang <yangxiaohua@everest-semi.com>
- *			<info@everest-semi.com> 
+ *  Copyright (C) 2017 Endless Mobile, Inc.
+ *  Authors: David Yang <yangxiaohua@everest-semi.com>,
+ *           Daniel Drake <drake@endlessm.com>
+ *
  *  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
  *
  *  This program is free software; you can redistribute it and/or modify
@@ -34,22 +37,22 @@
 #include "../atom/sst-atom-controls.h"
 #include "../common/sst-acpi.h"
 #include "../common/sst-dsp.h"
-struct byt_es8316_private {
+struct byt_cht_es8316_private {
 	struct clk *mclk;
 	struct snd_soc_jack jack;
 	struct cht_acpi_card *acpi_card;
 	char codec_name[16];
 };
 
-#define BYT_CODEC_DAI1	"ES8316 HiFi"
+#define CODEC_DAI1	"ES8316 HiFi"
 
-static inline struct snd_soc_dai *byt_get_codec_dai(struct snd_soc_card *card)
+static inline struct snd_soc_dai *get_codec_dai(struct snd_soc_card *card)
 {
 	struct snd_soc_pcm_runtime *rtd;
 
 	list_for_each_entry(rtd, &card->rtd_list, list) {
-		if (!strncmp(rtd->codec_dai->name, BYT_CODEC_DAI1,
-			     strlen(BYT_CODEC_DAI1)))
+		if (!strncmp(rtd->codec_dai->name, CODEC_DAI1,
+			     strlen(CODEC_DAI1)))
 			return rtd->codec_dai;
 	}
 	return NULL;
@@ -61,10 +64,10 @@ static int platform_clock_control(struct snd_soc_dapm_widget *w,
 	struct snd_soc_dapm_context *dapm = w->dapm;
 	struct snd_soc_card *card = dapm->card;
 	struct snd_soc_dai *codec_dai;
-	struct byt_es8316_private *priv = snd_soc_card_get_drvdata(card);
+	struct byt_cht_es8316_private *priv = snd_soc_card_get_drvdata(card);
 	int ret;
 
-	codec_dai = byt_get_codec_dai(card);
+	codec_dai = get_codec_dai(card);
 	if (!codec_dai) {
 		dev_err(card->dev,
 			"Codec dai not found; Unable to set platform clock\n");
@@ -89,7 +92,7 @@ static int platform_clock_control(struct snd_soc_dapm_widget *w,
 	return 0;
 }
 
-static const struct snd_soc_dapm_widget byt_es8316_widgets[] = {
+static const struct snd_soc_dapm_widget byt_cht_es8316_widgets[] = {
 	SND_SOC_DAPM_HP("Headphone", NULL),
 	SND_SOC_DAPM_MIC("Headset Mic", NULL),
 	SND_SOC_DAPM_MIC("Internal Mic", NULL),
@@ -101,7 +104,7 @@ static const struct snd_soc_dapm_widget byt_es8316_widgets[] = {
 
 
 
-static const struct snd_soc_dapm_route byt_es8316_audio_map[] = {
+static const struct snd_soc_dapm_route byt_cht_es8316_audio_map[] = {
         {"MIC1", NULL, "Headset Mic"},
         {"MIC2", NULL, "Internal Mic"},
  
@@ -124,7 +127,7 @@ static const struct snd_soc_dapm_route byt_es8316_audio_map[] = {
 
 };
 
-static const struct snd_kcontrol_new byt_es8316_controls[] = {
+static const struct snd_kcontrol_new byt_cht_es8316_controls[] = {
 	SOC_DAPM_PIN_SWITCH("Headphone"),
 	SOC_DAPM_PIN_SWITCH("Headset Mic"),
 	SOC_DAPM_PIN_SWITCH("Internal Mic"),
@@ -133,7 +136,7 @@ static const struct snd_kcontrol_new byt_es8316_controls[] = {
 
 
 
-static int byt_es8316_aif1_hw_params(struct snd_pcm_substream *substream,
+static int byt_cht_es8316_aif1_hw_params(struct snd_pcm_substream *substream,
 					struct snd_pcm_hw_params *params)
 
 {
@@ -156,11 +159,11 @@ static int byt_es8316_aif1_hw_params(struct snd_pcm_substream *substream,
 
 
 
-static int byt_es8316_init(struct snd_soc_pcm_runtime *runtime)
+static int byt_cht_es8316_init(struct snd_soc_pcm_runtime *runtime)
 {
 	int ret;
 	struct snd_soc_card *card = runtime->card;
-	struct byt_es8316_private *priv = snd_soc_card_get_drvdata(card);
+	struct byt_cht_es8316_private *priv = snd_soc_card_get_drvdata(card);
 	printk("!!!!!!!!!!!!!!!!!!!!!!!Enter Into %s \n", __func__);
 	card->dapm.idle_bias_off = true;
 	ret = clk_prepare_enable(priv->mclk);
@@ -176,7 +179,7 @@ static int byt_es8316_init(struct snd_soc_pcm_runtime *runtime)
 	return ret;
 }
 
-static const struct snd_soc_pcm_stream byt_es8316_dai_params = {
+static const struct snd_soc_pcm_stream byt_cht_es8316_dai_params = {
 	.formats = SNDRV_PCM_FMTBIT_S24_LE,
 	.rate_min = 48000,
 	.rate_max = 48000,
@@ -184,7 +187,7 @@ static const struct snd_soc_pcm_stream byt_es8316_dai_params = {
 	.channels_max = 2,
 };
 
-static int byt_es8316_codec_fixup(struct snd_soc_pcm_runtime *rtd,
+static int byt_cht_es8316_codec_fixup(struct snd_soc_pcm_runtime *rtd,
 			    struct snd_pcm_hw_params *params)
 {
 	struct snd_interval *rate = hw_param_interval(params,
@@ -223,21 +226,21 @@ static int byt_es8316_codec_fixup(struct snd_soc_pcm_runtime *rtd,
 	return 0;
 }
 
-static int byt_es8316_aif1_startup(struct snd_pcm_substream *substream)
+static int byt_cht_es8316_aif1_startup(struct snd_pcm_substream *substream)
 {
 	return snd_pcm_hw_constraint_single(substream->runtime,
 			SNDRV_PCM_HW_PARAM_RATE, 48000);
 }
 
-static const struct snd_soc_ops byt_es8316_aif1_ops = {
-	.startup = byt_es8316_aif1_startup,
+static const struct snd_soc_ops byt_cht_es8316_aif1_ops = {
+	.startup = byt_cht_es8316_aif1_startup,
 };
 
-static const struct snd_soc_ops byt_es8316_be_ssp2_ops = {
-	.hw_params = byt_es8316_aif1_hw_params,
+static const struct snd_soc_ops byt_cht_es8316_be_ssp2_ops = {
+	.hw_params = byt_cht_es8316_aif1_hw_params,
 };
 
-static struct snd_soc_dai_link byt_es8316_dais[] = {
+static struct snd_soc_dai_link byt_cht_es8316_dais[] = {
 	[MERR_DPCM_AUDIO] = {
 		.name = "Audio Port",
 		.stream_name = "Audio",
@@ -249,7 +252,7 @@ static struct snd_soc_dai_link byt_es8316_dais[] = {
 		.dynamic = 1,
 		.dpcm_playback = 1,
 		.dpcm_capture = 1,
-		.ops = &byt_es8316_aif1_ops,
+		.ops = &byt_cht_es8316_aif1_ops,
 	},
 
 	[MERR_DPCM_DEEP_BUFFER] = {
@@ -263,7 +266,7 @@ static struct snd_soc_dai_link byt_es8316_dais[] = {
 		.nonatomic = true,
 		.dynamic = 1,
 		.dpcm_playback = 1,
-		.ops = &byt_es8316_aif1_ops,
+		.ops = &byt_cht_es8316_aif1_ops,
 	},
 
 	[MERR_DPCM_COMPR] = {
@@ -286,36 +289,36 @@ static struct snd_soc_dai_link byt_es8316_dais[] = {
 		.codec_name = "es8316.1-0011", /* overwritten with HID */
 		.dai_fmt = SND_SOC_DAIFMT_I2S | SND_SOC_DAIFMT_NB_NF
 						| SND_SOC_DAIFMT_CBS_CFS,
-		.be_hw_params_fixup = byt_es8316_codec_fixup,
+		.be_hw_params_fixup = byt_cht_es8316_codec_fixup,
 		.ignore_suspend = 1,
 		.dpcm_playback = 1,
 		.dpcm_capture = 1,
-		.init = byt_es8316_init,
-		.ops = &byt_es8316_be_ssp2_ops,
+		.init = byt_cht_es8316_init,
+		.ops = &byt_cht_es8316_be_ssp2_ops,
 	},
 };
 
 
 /* SoC card */
-static struct snd_soc_card byt_es8316_card = {
-	.name = "cht-es8316",
+static struct snd_soc_card byt_cht_es8316_card = {
+	.name = "bytcht-es8316",
 	.owner = THIS_MODULE,
-	.dai_link = byt_es8316_dais,
-	.num_links = ARRAY_SIZE(byt_es8316_dais),
-	.dapm_widgets = byt_es8316_widgets,
-	.num_dapm_widgets = ARRAY_SIZE(byt_es8316_widgets),
-	.dapm_routes = byt_es8316_audio_map,
-	.num_dapm_routes = ARRAY_SIZE(byt_es8316_audio_map),
-	.controls = byt_es8316_controls,
-	.num_controls = ARRAY_SIZE(byt_es8316_controls),
+	.dai_link = byt_cht_es8316_dais,
+	.num_links = ARRAY_SIZE(byt_cht_es8316_dais),
+	.dapm_widgets = byt_cht_es8316_widgets,
+	.num_dapm_widgets = ARRAY_SIZE(byt_cht_es8316_widgets),
+	.dapm_routes = byt_cht_es8316_audio_map,
+	.num_dapm_routes = ARRAY_SIZE(byt_cht_es8316_audio_map),
+	.controls = byt_cht_es8316_controls,
+	.num_controls = ARRAY_SIZE(byt_cht_es8316_controls),
 };
 
-static char byt_es8316_codec_name[16]; /* i2c-<HID>:00 with HID being 8 chars */
+static char byt_cht_es8316_codec_name[16]; /* i2c-<HID>:00 with HID being 8 chars */
 
-static int snd_byt_es8316_mc_probe(struct platform_device *pdev)
+static int snd_byt_cht_es8316_mc_probe(struct platform_device *pdev)
 {
 	int ret_val = 0;
-	struct byt_es8316_private *priv;
+	struct byt_cht_es8316_private *priv;
 	struct sst_acpi_mach *mach;
 	const char *i2c_name = NULL;
 	int i;
@@ -325,15 +328,15 @@ static int snd_byt_es8316_mc_probe(struct platform_device *pdev)
 	if (!priv)
 		return -ENOMEM;
 	/* register the soc card */
-	byt_es8316_card.dev = &pdev->dev;
-	mach = byt_es8316_card.dev->platform_data;
+	byt_cht_es8316_card.dev = &pdev->dev;
+	mach = byt_cht_es8316_card.dev->platform_data;
 
 	/* fix index of codec dai */
 	dai_index = MERR_DPCM_COMPR + 1;
 	printk("%s, dai_index = %d \n", __func__, dai_index);
 	printk("%s, start to fix index of dai \n", __func__);
-	for (i = 0; i < ARRAY_SIZE(byt_es8316_dais); i++) {
-		if (!strcmp(byt_es8316_dais[i].codec_name, "i2c-ESSX8316:00")) {
+	for (i = 0; i < ARRAY_SIZE(byt_cht_es8316_dais); i++) {
+		if (!strcmp(byt_cht_es8316_dais[i].codec_name, "i2c-ESSX8316:00")) {
 			dai_index = i;
 			printk("%s, dai_index = %d \n", __func__, dai_index);
 			break;
@@ -342,42 +345,42 @@ static int snd_byt_es8316_mc_probe(struct platform_device *pdev)
 	/* fixup codec name based on HID */
 	i2c_name = sst_acpi_find_name_from_hid(mach->id);
 	if (i2c_name != NULL) {
-		snprintf(byt_es8316_codec_name, sizeof(byt_es8316_codec_name),
+		snprintf(byt_cht_es8316_codec_name, sizeof(byt_cht_es8316_codec_name),
 			"%s%s", "i2c-", i2c_name);
 		printk("%s, i2c_name = %s\n", __func__, i2c_name);
 	}
 
-	snd_soc_card_set_drvdata(&byt_es8316_card, priv);
-	ret_val = snd_soc_register_card(&byt_es8316_card);
+	snd_soc_card_set_drvdata(&byt_cht_es8316_card, priv);
+	ret_val = snd_soc_register_card(&byt_cht_es8316_card);
 	if (ret_val) {
 		printk("snd_soc_register_card failed %d\n", ret_val);
 		return ret_val;
 	}
-	platform_set_drvdata(pdev, &byt_es8316_card);
+	platform_set_drvdata(pdev, &byt_cht_es8316_card);
 
         priv->mclk = devm_clk_get(&pdev->dev, "pmc_plt_clk_3");
 	printk("Exit %s\n", __func__);
 	return ret_val;
 }
 
-static const struct acpi_device_id byt_acpi_match[] = {
+static const struct acpi_device_id cht_acpi_match[] = {
 	{ "808622A8", 0 },
 	{ "ESSX8316", 0 },
 	{},
 };
-MODULE_DEVICE_TABLE(acpi, byt_acpi_match);
+MODULE_DEVICE_TABLE(acpi, cht_acpi_match);
 
-static struct platform_driver snd_byt_es8316_mc_driver = {
+static struct platform_driver snd_byt_cht_es8316_mc_driver = {
 	.driver = {
-		.name = "cht-bsw-es8316",
-		.acpi_match_table = ACPI_PTR(byt_acpi_match),
+		.name = "bytcht_es8316",
+		.acpi_match_table = ACPI_PTR(cht_acpi_match),
 		.pm = &snd_soc_pm_ops,
 	},
-	.probe = snd_byt_es8316_mc_probe,
+	.probe = snd_byt_cht_es8316_mc_probe,
 };
 
-module_platform_driver(snd_byt_es8316_mc_driver);
-MODULE_DESCRIPTION("ASoC Intel(R) Cherrytrail/Baytrail-CR Machine driver");
+module_platform_driver(snd_byt_cht_es8316_mc_driver);
+MODULE_DESCRIPTION("ASoC Intel(R) Cherrytrail Machine driver");
 MODULE_AUTHOR("DavidYang <yangxiaohua@everest-semi.com / info@everest-semi.com>");
 MODULE_LICENSE("GPL v2");
-MODULE_ALIAS("platform:cht-bsw-es8316");
+MODULE_ALIAS("platform:bytcht_es8316");
