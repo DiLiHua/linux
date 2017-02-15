@@ -1128,17 +1128,19 @@ static  int es8316_i2c_remove(struct i2c_client *client)
 	return 0;
 }
 
-static const struct of_device_id es8316_of_match[] = {
-        { .compatible = "everest,es8316", },
-        {},
-};
-MODULE_DEVICE_TABLE(of, es8316_of_match);
 static const struct i2c_device_id es8316_i2c_id[] = {
 	{"ESSX8316", 0 },
 	{}
 };
 MODULE_DEVICE_TABLE(i2c, es8316_i2c_id);
 
+#ifdef CONFIG_OF
+static const struct of_device_id es8316_of_match[] = {
+        { .compatible = "everest,es8316", },
+        {},
+};
+MODULE_DEVICE_TABLE(of, es8316_of_match);
+#endif
 
 #ifdef CONFIG_ACPI
 static const struct acpi_device_id es8316_acpi_match[] = {
