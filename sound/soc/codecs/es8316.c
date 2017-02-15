@@ -1133,7 +1133,6 @@ static const struct of_device_id es8316_of_match[] = {
         {},
 };
 MODULE_DEVICE_TABLE(of, es8316_of_match);
-static const unsigned short normal_i2c[] = {0x11, I2C_CLIENT_END};
 static const struct i2c_device_id es8316_i2c_id[] = {
 	{"ESSX8316", 0 },
 	{}
@@ -1160,35 +1159,8 @@ static struct i2c_driver es8316_i2c_driver = {
 	.remove = es8316_i2c_remove,
 	.class  = I2C_CLASS_HWMON,
 	.id_table = es8316_i2c_id,
-	.address_list = normal_i2c,
 };
-
-struct i2c_board_info es8316_info = {I2C_BOARD_INFO("ESSX8316", 0x11)};
-static int __init es8316_init(void)
-{
-	int ret;
-	struct i2c_client *client;
-	struct i2c_adapter *i2c_adp;
-	DBG("--%s--start--\n", __func__);
-	i2c_adp = i2c_get_adapter(1);
-	if(i2c_adp == NULL)
-	{
-		DBG("i2c adapter is NULL!!\n");
-		return -11;
-	}
-	client = i2c_new_device(i2c_adp, &es8316_info);
-	ret = i2c_add_driver(&es8316_i2c_driver);
-	DBG("-----%s---------, ret = %d\n", __func__, ret);
-	return ret;
-}
-
-static void __exit es8316_exit(void)
-{
-	return i2c_del_driver(&es8316_i2c_driver);
-}
-
-module_init(es8316_init);
-module_exit(es8316_exit);
+module_i2c_driver(es8316_i2c_driver);
 
 MODULE_DESCRIPTION("ASoC es8316 driver");
 MODULE_AUTHOR("Will <will@everset-semi.com>");
