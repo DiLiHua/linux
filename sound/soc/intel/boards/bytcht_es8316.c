@@ -336,17 +336,9 @@ static int snd_byt_cht_es8316_mc_probe(struct platform_device *pdev)
 	return ret_val;
 }
 
-static const struct acpi_device_id cht_acpi_match[] = {
-	{ "808622A8", 0 },
-	{ "ESSX8316", 0 },
-	{},
-};
-MODULE_DEVICE_TABLE(acpi, cht_acpi_match);
-
 static struct platform_driver snd_byt_cht_es8316_mc_driver = {
 	.driver = {
 		.name = "bytcht_es8316",
-		.acpi_match_table = ACPI_PTR(cht_acpi_match),
 		.pm = &snd_soc_pm_ops,
 	},
 	.probe = snd_byt_cht_es8316_mc_probe,
