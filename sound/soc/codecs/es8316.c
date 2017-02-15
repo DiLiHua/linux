@@ -86,14 +86,14 @@ static const struct reg_default es8316_reg_defaults[] = {
 	{0x4c, 0xff}, {0x4d, 0x00}, {0x4e, 0x00}, {0x4f, 0xff},
 	{0x50, 0x00}, {0x51, 0x00}, {0x52, 0x00}, {0x53, 0x00},
 };
-static bool es8316_readable(struct snd_soc_codec *codec, unsigned int reg)
+static bool es8316_readable(struct device *dev, unsigned int reg)
 {
 	if (reg <= 90)
 		return 1;
 	else
 		return 0;
 }
-static bool es8316_volatile(struct snd_soc_codec *codec, unsigned int reg)
+static bool es8316_volatile(struct device *dev, unsigned int reg)
 {
 	if (reg <= 90)
 		return 1;
@@ -1031,13 +1031,14 @@ static struct snd_soc_codec_driver soc_codec_dev_es8316 = {
 	.reg_word_size = sizeof(u8),
 	.reg_cache_default = es8316_reg_defaults,
         .reg_cache_size = ARRAY_SIZE(es8316_reg_defaults),
-
-	.controls = es8316_snd_controls,
-	.num_controls = ARRAY_SIZE(es8316_snd_controls),
-	.dapm_widgets = es8316_dapm_widgets,
-	.num_dapm_widgets = ARRAY_SIZE(es8316_dapm_widgets),
-	.dapm_routes = es8316_dapm_routes,
-	.num_dapm_routes = ARRAY_SIZE(es8316_dapm_routes),
+	.component_driver = {
+		.controls = es8316_snd_controls,
+		.num_controls = ARRAY_SIZE(es8316_snd_controls),
+		.dapm_widgets = es8316_dapm_widgets,
+		.num_dapm_widgets = ARRAY_SIZE(es8316_dapm_widgets),
+		.dapm_routes = es8316_dapm_routes,
+		.num_dapm_routes = ARRAY_SIZE(es8316_dapm_routes),
+	},
 };
 static const struct regmap_config es8316_regmap = {
         .reg_bits = 8,
