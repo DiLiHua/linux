@@ -41,7 +41,6 @@ struct byt_cht_es8316_private {
 	struct clk *mclk;
 	struct snd_soc_jack jack;
 	struct cht_acpi_card *acpi_card;
-	char codec_name[16];
 };
 
 #define CODEC_DAI1	"ES8316 HiFi"
@@ -286,7 +285,7 @@ static struct snd_soc_dai_link byt_cht_es8316_dais[] = {
 		.platform_name = "sst-mfld-platform",
 		.no_pcm = 1,
 		.codec_dai_name = "ES8316 HiFi", /* changed w/ quirk */
-		.codec_name = "es8316.1-0011", /* overwritten with HID */
+		.codec_name = "i2c-ESSX8316:00",
 		.dai_fmt = SND_SOC_DAIFMT_I2S | SND_SOC_DAIFMT_NB_NF
 						| SND_SOC_DAIFMT_CBS_CFS,
 		.be_hw_params_fixup = byt_cht_es8316_codec_fixup,
@@ -313,42 +312,16 @@ static struct snd_soc_card byt_cht_es8316_card = {
 	.num_controls = ARRAY_SIZE(byt_cht_es8316_controls),
 };
 
-static char byt_cht_es8316_codec_name[16]; /* i2c-<HID>:00 with HID being 8 chars */
-
 static int snd_byt_cht_es8316_mc_probe(struct platform_device *pdev)
 {
 	int ret_val = 0;
 	struct byt_cht_es8316_private *priv;
-	struct sst_acpi_mach *mach;
-	const char *i2c_name = NULL;
-	int i;
-	int dai_index;
 	printk("!!!!!!!!!!!!!!!!!!!!!!!Enter Into %s \n", __func__);
 	priv = devm_kzalloc(&pdev->dev, sizeof(*priv), GFP_ATOMIC);
 	if (!priv)
 		return -ENOMEM;
 	/* register the soc card */
 	byt_cht_es8316_card.dev = &pdev->dev;
-	mach = byt_cht_es8316_card.dev->platform_data;
-
-	/* fix index of codec dai */
-	dai_index = MERR_DPCM_COMPR + 1;
-	printk("%s, dai_index = %d \n", __func__, dai_index);
-	printk("%s, start to fix index of dai \n", __func__);
-	for (i = 0; i < ARRAY_SIZE(byt_cht_es8316_dais); i++) {
-		if (!strcmp(byt_cht_es8316_dais[i].codec_name, "i2c-ESSX8316:00")) {
-			dai_index = i;
-			printk("%s, dai_index = %d \n", __func__, dai_index);
-			break;
-		}
-	}
-	/* fixup codec name based on HID */
-	i2c_name = sst_acpi_find_name_from_hid(mach->id);
-	if (i2c_name != NULL) {
-		snprintf(byt_cht_es8316_codec_name, sizeof(byt_cht_es8316_codec_name),
-			"%s%s", "i2c-", i2c_name);
-		printk("%s, i2c_name = %s\n", __func__, i2c_name);
-	}
 
 	snd_soc_card_set_drvdata(&byt_cht_es8316_card, priv);
 	ret_val = snd_soc_register_card(&byt_cht_es8316_card);
