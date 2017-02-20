@@ -187,8 +187,8 @@ static const struct snd_kcontrol_new es8316_snd_controls[] = {
 		       0, 4, 7, 0, hpmixer_gain_tlv),
 
 	/* DAC Digital controls */
-	SOC_DOUBLE_R_TLV("DAC Playback Volume", SND_SOC_NOPM,
-			 SND_SOC_NOPM, 0, 0xC0, 1, dac_vol_tlv),
+	SOC_DOUBLE_R_TLV("DAC Playback Volume", ES8316_DAC_VOLL_REG33,
+			 ES8316_DAC_VOLR_REG34, 0, 0xC0, 1, dac_vol_tlv),
 
 	SOC_SINGLE("Enable DAC Soft Ramp", ES8316_DAC_SET1_REG30, 4, 1, 1),
 	SOC_SINGLE("DAC Soft Ramp Rate", ES8316_DAC_SET1_REG30, 2, 4, 0),
