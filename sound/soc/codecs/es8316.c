@@ -690,17 +690,12 @@ static int es8316_pcm_startup(struct snd_pcm_substream *substream,
 	snd_soc_update_bits(codec, ES8316_ADC_PDN_LINSEL_REG22, 0xc0,0x00);
 	/* 
 	 * The set of sample rates that can be supported depends on the
-	 * MCLK supplied to the CODEC - enforce this.
+	 * MCLK supplied to the CODEC
 	 */
-	if (!es8316->sysclk) {
-		dev_err(codec->dev,
-			"No MCLK configured, call set_sysclk() on init\n");
-		return -EINVAL;
-	}
-
-	snd_pcm_hw_constraint_list(substream->runtime, 0,
-				   SNDRV_PCM_HW_PARAM_RATE,
-				   es8316->sysclk_constraints);
+	if (es8316->sysclk_constraints)
+		snd_pcm_hw_constraint_list(substream->runtime, 0,
+					   SNDRV_PCM_HW_PARAM_RATE,
+					   es8316->sysclk_constraints);
 
 	return 0;
 }
@@ -738,6 +733,10 @@ static int es8316_pcm_hw_params(struct snd_pcm_substream *substream,
 	adcdiv &= 0x0f;
 	dacdiv &= 0x0f;
 
+	if (!es8316->sysclk_constraints) {
+		dev_err(codec->dev, "No MCLK configured\n");
+		return -EINVAL;
+	}
 
 	coeff = get_coeff(es8316->sysclk, params_rate(params));
 	if (coeff < 0) {
