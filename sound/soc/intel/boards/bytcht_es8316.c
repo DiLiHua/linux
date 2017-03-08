@@ -144,10 +144,7 @@ static int byt_cht_es8316_aif1_hw_params(struct snd_pcm_substream *substream,
 
 	int ret;
 
-	ret = snd_soc_dai_set_sysclk(codec_dai, 19200000,
-				     params_rate(params) * 512,
-				     SND_SOC_CLOCK_IN);
-
+	ret = snd_soc_dai_set_sysclk(codec_dai, 0, 19200000, SND_SOC_CLOCK_IN);
 	if (ret < 0) {
 		dev_err(rtd->dev, "can't set codec clock %d\n", ret);
 		return ret;
