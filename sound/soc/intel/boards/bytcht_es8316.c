@@ -157,7 +157,6 @@ static int byt_cht_es8316_aif1_hw_params(struct snd_pcm_substream *substream,
 
 static int byt_cht_es8316_init(struct snd_soc_pcm_runtime *runtime)
 {
-	int ret;
 	struct snd_soc_card *card = runtime->card;
 	struct byt_cht_es8316_private *priv = snd_soc_card_get_drvdata(card);
 	printk("!!!!!!!!!!!!!!!!!!!!!!!Enter Into %s \n", __func__);
@@ -172,7 +171,7 @@ static int byt_cht_es8316_init(struct snd_soc_pcm_runtime *runtime)
 	if (ret)
 		printk("%s, unable to set MCLK rate\n", __func__);
 	printk("Exit %s\n", __func__);
-	return ret;
+	return 0;
 }
 
 static const struct snd_soc_pcm_stream byt_cht_es8316_dai_params = {
