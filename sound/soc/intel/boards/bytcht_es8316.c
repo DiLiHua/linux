@@ -64,7 +64,6 @@ static int platform_clock_control(struct snd_soc_dapm_widget *w,
 	struct snd_soc_card *card = dapm->card;
 	struct snd_soc_dai *codec_dai;
 	struct byt_cht_es8316_private *priv = snd_soc_card_get_drvdata(card);
-	int ret;
 
 	codec_dai = get_codec_dai(card);
 	if (!codec_dai) {
@@ -73,19 +72,14 @@ static int platform_clock_control(struct snd_soc_dapm_widget *w,
 		return -EIO;
 	}
 	if (SND_SOC_DAPM_EVENT_ON(event)) {
-			ret = clk_prepare_enable(priv->mclk);
-			if (ret < 0) {
-				dev_err(card->dev,
-					"could not configure MCLK state");
-				return ret;
-			}	
+		int ret = clk_prepare_enable(priv->mclk);
+		if (ret < 0) {
+			dev_err(card->dev,
+				"could not configure MCLK state");
+			return ret;
+		}
 	} else {
-		ret = clk_prepare_enable(priv->mclk);
-	}
-
-	if (ret < 0) {
-		dev_err(card->dev, "can't set codec sysclk: %d\n", ret);
-		return ret;
+		clk_disable_unprepare(priv->mclk);
 	}
 
 	return 0;
@@ -156,6 +150,15 @@ static int byt_cht_es8316_init(struct snd_soc_pcm_runtime *runtime)
 	struct byt_cht_es8316_private *priv = snd_soc_card_get_drvdata(card);
 	printk("!!!!!!!!!!!!!!!!!!!!!!!Enter Into %s \n", __func__);
 	card->dapm.idle_bias_off = true;
+
+	/*
+	 * The firmware might enable the clock at boot (this information
+	 * may or may not be reflected in the enable clock register).
+	 * To change the rate we must disable the clock first to cover these
+	 * cases. Due to common clock framework restrictions that do not allow
+	 * to disable a clock that has not been enabled, we need to enable
+	 * the clock first.
+	 */
 	ret = clk_prepare_enable(priv->mclk);
 	if(!ret)
 	{
@@ -322,7 +325,15 @@ static int snd_byt_cht_es8316_mc_probe(struct platform_device *pdev)
 	}
 	platform_set_drvdata(pdev, &byt_cht_es8316_card);
 
-        priv->mclk = devm_clk_get(&pdev->dev, "pmc_plt_clk_3");
+	priv->mclk = devm_clk_get(&pdev->dev, "pmc_plt_clk_3");
+	if (IS_ERR(priv->mclk)) {
+		ret = PTR_ERR(priv->mclk);
+		dev_err(&pdev->dev,
+			"Failed to get MCLK from pmc_plt_clk_3: %d\n",
+			ret);
+		return ret;
+	}
+
 	printk("Exit %s\n", __func__);
 	return ret_val;
 }
