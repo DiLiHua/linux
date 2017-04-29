@@ -93,9 +93,8 @@ static int platform_clock_control(struct snd_soc_dapm_widget *w,
 
 static const struct snd_soc_dapm_widget byt_cht_es8316_widgets[] = {
 	SND_SOC_DAPM_HP("Headphone", NULL),
-	SND_SOC_DAPM_MIC("Headset Mic", NULL),
-	SND_SOC_DAPM_MIC("Internal Mic", NULL),
-	SND_SOC_DAPM_SPK("Speaker", NULL),
+	SND_SOC_DAPM_MIC("Microphone 1", NULL),
+	SND_SOC_DAPM_MIC("Microphone 2", NULL),
 	SND_SOC_DAPM_SUPPLY("Platform Clock", SND_SOC_NOPM, 0, 0,
 			    platform_clock_control, SND_SOC_DAPM_PRE_PMU |
 			    SND_SOC_DAPM_POST_PMD),
@@ -104,13 +103,11 @@ static const struct snd_soc_dapm_widget byt_cht_es8316_widgets[] = {
 
 
 static const struct snd_soc_dapm_route byt_cht_es8316_audio_map[] = {
-        {"MIC1", NULL, "Headset Mic"},
-        {"MIC2", NULL, "Internal Mic"},
+        {"MIC1", NULL, "Microphone 1"},
+        {"MIC2", NULL, "Microphone 2"},
  
         {"Headphone", NULL, "HPOL"},
         {"Headphone", NULL, "HPOR"},
-        {"Speaker", NULL, "HPOL"},
-        {"Speaker", NULL, "HPOR"},
 
 	{"Playback", NULL, "ssp2 Tx"},
         {"ssp2 Tx", NULL, "codec_out0"},
@@ -120,17 +117,15 @@ static const struct snd_soc_dapm_route byt_cht_es8316_audio_map[] = {
         {"ssp2 Rx", NULL, "Capture"},
 
         {"Headphone", NULL, "Platform Clock"},
-        {"Headset Mic", NULL, "Platform Clock"},
-        {"Internal Mic", NULL, "Platform Clock"},
-        {"Speaker", NULL, "Platform Clock"},
+        {"Microphone 1", NULL, "Platform Clock"},
+        {"Microphone 2", NULL, "Platform Clock"},
 
 };
 
 static const struct snd_kcontrol_new byt_cht_es8316_controls[] = {
 	SOC_DAPM_PIN_SWITCH("Headphone"),
-	SOC_DAPM_PIN_SWITCH("Headset Mic"),
-	SOC_DAPM_PIN_SWITCH("Internal Mic"),
-	SOC_DAPM_PIN_SWITCH("Speaker"),
+	SOC_DAPM_PIN_SWITCH("Microphone 1"),
+	SOC_DAPM_PIN_SWITCH("Microphone 2"),
 };
 
 
