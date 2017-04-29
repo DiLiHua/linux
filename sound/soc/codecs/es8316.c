@@ -347,7 +347,7 @@ static const struct snd_soc_dapm_widget es8316_dapm_widgets[] = {
 
 	/* Digital Interface */
 	SND_SOC_DAPM_AIF_OUT("I2S OUT", "I2S1 Capture",  1,
-			     ES8316_SDP_ADCFMT_REG0A, 6, 0),
+			     ES8316_SDP_ADCFMT_REG0A, 6, 1),
 
 	SND_SOC_DAPM_AIF_IN("I2S IN", "I2S1 Playback", 0,
 			    SND_SOC_NOPM, 0, 0),
