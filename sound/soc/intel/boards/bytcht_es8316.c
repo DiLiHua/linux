@@ -289,6 +289,7 @@ static struct snd_soc_card byt_cht_es8316_card = {
 	.num_dapm_routes = ARRAY_SIZE(byt_cht_es8316_audio_map),
 	.controls = byt_cht_es8316_controls,
 	.num_controls = ARRAY_SIZE(byt_cht_es8316_controls),
+	.fully_routed = true,
 };
 
 static int snd_byt_cht_es8316_mc_probe(struct platform_device *pdev)
