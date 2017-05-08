@@ -962,33 +962,6 @@ static const struct regmap_config es8316_regmap = {
         .num_reg_defaults = ARRAY_SIZE(es8316_reg_defaults),
 };
 
-static void es8316_i2c_shutdown(struct i2c_client *i2c)
-{
-	struct snd_soc_codec *codec;
-
-	if (!es8316_codec)
-		goto err;
-	codec = es8316_codec;
-	if(es8316_init_reg>0)
-	{
-		snd_soc_write(codec, ES8316_CPHP_ICAL_VOL_REG18, 0x33);
-		snd_soc_write(codec, ES8316_CPHP_OUTEN_REG17, 0x00);
-		snd_soc_write(codec, ES8316_CPHP_LDOCTL_REG1B, 0x03);
-		snd_soc_write(codec, ES8316_CPHP_PDN2_REG1A, 0x22);
-		snd_soc_write(codec, ES8316_CPHP_PDN1_REG19, 0x06);
-		snd_soc_write(codec, ES8316_HPMIX_SWITCH_REG14, 0x00);
-		snd_soc_write(codec, ES8316_HPMIX_PDN_REG15, 0x33);
-		snd_soc_write(codec, ES8316_HPMIX_VOL_REG16, 0x00);
-		snd_soc_write(codec, ES8316_ADC_PDN_LINSEL_REG22, 0xC0);
-		snd_soc_write(codec, ES8316_DAC_PDN_REG2F, 0x11);
-		snd_soc_write(codec, ES8316_SYS_PDN_REG0D, 0x3F);
-		snd_soc_write(codec, ES8316_CLKMGR_CLKSW_REG01, 0x03);
-		snd_soc_write(codec, ES8316_RESET_REG00, 0x7F);		
-	}
-err:
-	return;
-}
-
 static int es8316_i2c_probe(struct i2c_client *i2c_client,
 			    const struct i2c_device_id *id)
 {
@@ -1040,7 +1013,6 @@ static struct i2c_driver es8316_i2c_driver = {
 		.acpi_match_table = ACPI_PTR(es8316_acpi_match),
 		.of_match_table = of_match_ptr(es8316_of_match),
 	},
-	.shutdown = es8316_i2c_shutdown,
 	.probe = es8316_i2c_probe,
 	.remove = es8316_i2c_remove,
 	.id_table = es8316_i2c_id,
