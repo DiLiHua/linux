@@ -13,10 +13,8 @@
 #include <linux/module.h>
 #include <linux/init.h>
 #include <linux/delay.h>
-#include <linux/pm.h>
 #include <linux/i2c.h>
 #include <linux/acpi.h>
-#include <linux/dmi.h>
 #include <sound/core.h>
 #include <sound/pcm.h>
 #include <sound/pcm_params.h>
@@ -823,53 +821,6 @@ static int es8316_init_regs(struct snd_soc_codec *codec)
 	return 0;
 }
 
-static int es8316_suspend(struct snd_soc_codec *codec)
-{
-	snd_soc_write(codec, ES8316_CPHP_OUTEN_REG17, 0x00);
-	snd_soc_write(codec, ES8316_DAC_PDN_REG2F, 0x11);
-	snd_soc_write(codec, ES8316_CPHP_LDOCTL_REG1B, 0x03);
-	snd_soc_write(codec, ES8316_CPHP_PDN2_REG1A, 0x22);
-	snd_soc_write(codec, ES8316_CPHP_PDN1_REG19, 0x06);
-	snd_soc_write(codec, ES8316_HPMIX_SWITCH_REG14, 0x00);
-	snd_soc_write(codec, ES8316_HPMIX_PDN_REG15, 0x33);
-	snd_soc_write(codec, ES8316_HPMIX_VOL_REG16, 0x00);
-	snd_soc_write(codec, ES8316_ADC_PDN_LINSEL_REG22, 0xC0);
-	snd_soc_write(codec, ES8316_SYS_PDN_REG0D, 0x3F);
-	snd_soc_write(codec, ES8316_SYS_LP1_REG0E, 0x3F);
-	snd_soc_write(codec, ES8316_SYS_LP2_REG0F, 0x1F);
-	snd_soc_write(codec, ES8316_RESET_REG00, 0x00);
-	return 0;
-}
-
-static int es8316_resume(struct snd_soc_codec *codec)
-{
-	int retv;
-
-	retv = es8316_reset(codec); /* UPDATED BY DAVID,15-3-5 */
-	retv = snd_soc_read(codec, ES8316_CLKMGR_ADCDIV2_REG05);
-	if (retv == 0) {
-		es8316_init_regs(codec);
-		/* set gpio2 to GM SHORT */
-		snd_soc_write(codec, ES8316_GPIO_SEL_REG4D, 0x00);
-		/* max debance time, enable interrupt, low active */
-		snd_soc_write(codec, ES8316_GPIO_DEBUNCE_INT_REG4E, 0xf3);
-		snd_soc_write(codec, ES8316_CPHP_OUTEN_REG17, 0x00);
-		snd_soc_write(codec, ES8316_DAC_PDN_REG2F, 0x11);
-		snd_soc_write(codec, ES8316_CPHP_LDOCTL_REG1B, 0x03);
-		snd_soc_write(codec, ES8316_CPHP_PDN2_REG1A, 0x22);
-		snd_soc_write(codec, ES8316_CPHP_PDN1_REG19, 0x06);
-		snd_soc_write(codec, ES8316_HPMIX_SWITCH_REG14, 0x00);
-		snd_soc_write(codec, ES8316_HPMIX_PDN_REG15, 0x33);
-		snd_soc_write(codec, ES8316_HPMIX_VOL_REG16, 0x00);
-		snd_soc_write(codec, ES8316_SYS_PDN_REG0D, 0x3F);
-		snd_soc_write(codec, ES8316_SYS_LP1_REG0E, 0xFF);
-		snd_soc_write(codec, ES8316_SYS_LP2_REG0F, 0xFF);
-		snd_soc_write(codec, ES8316_CLKMGR_CLKSW_REG01, 0xF3);
-		snd_soc_update_bits(codec, ES8316_ADC_PDN_LINSEL_REG22, 0xc0,0xc0);
-	}
-	return 0;
-}
-
 static int es8316_probe(struct snd_soc_codec *codec)
 {
 
@@ -886,8 +837,6 @@ static int es8316_remove(struct snd_soc_codec *codec)
 static struct snd_soc_codec_driver soc_codec_dev_es8316 = {
 	.probe =	es8316_probe,
 	.remove =	es8316_remove,
-	.suspend =	es8316_suspend,
-	.resume =	es8316_resume,
 	.set_bias_level = es8316_set_bias_level,	
 	.idle_bias_off = true,
 
