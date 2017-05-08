@@ -11,28 +11,19 @@
  */
 
 #include <linux/module.h>
-#include <linux/moduleparam.h>
 #include <linux/init.h>
 #include <linux/delay.h>
 #include <linux/pm.h>
 #include <linux/i2c.h>
-#include <linux/platform_device.h>
-#include <linux/spi/spi.h>
-#include <linux/gpio.h>
-#include <linux/gpio/consumer.h>
 #include <linux/acpi.h>
 #include <linux/dmi.h>
-#include <linux/regulator/consumer.h>
 #include <sound/core.h>
 #include <sound/pcm.h>
 #include <sound/pcm_params.h>
-#include <sound/jack.h>
 #include <sound/soc.h>
 #include <sound/soc-dapm.h>
 #include <sound/initval.h>
 #include <sound/tlv.h>
-
-//#include <linux/irq.h>
 #include <linux/regmap.h>
 #include "es8316.h"
 
@@ -43,20 +34,7 @@
 #endif
 #define alsa_dbg DBG
 
-#define dmic_used  1
-#define amic_used  0
-
-#define INVALID_GPIO -1
-
-#define ES8316_CODEC_SET_SPK	1
-#define ES8316_CODEC_SET_HP	2
-
-
-int HP_IRQ = 0;
-int hp_irq_flag = 0;
 int es8316_init_reg = 0;
-
-struct snd_soc_codec *g_es8316_codec;
 
 struct snd_soc_codec *es8316_codec;
 static int es8316_init_regs(struct snd_soc_codec *codec);
@@ -106,22 +84,10 @@ struct es8316_priv {
 	struct regmap *regmap;
 	struct i2c_client *i2c;
 
-	unsigned int dmic_amic;
 	unsigned int sysclk;
 	struct snd_pcm_hw_constraint_list *sysclk_constraints;
 
-	int spk_ctl_gpio;
-	int hp_ctl_gpio;
-	int hp_det_gpio;
-
-	bool spk_gpio_level;
-	bool hp_gpio_level;
-	bool hp_det_level;
-
-	int pwr_count;
 };
-
-struct es8316_priv *es8316_private;
 
 /*
  * es8316_reset
@@ -135,11 +101,9 @@ static int es8316_reset(struct snd_soc_codec *codec)
 	return snd_soc_write(codec, ES8316_RESET_REG00, 0x03);
 }
 
-static char mute_flag = 1;
 /*
 * es8316S Controls
 */
-/*#define DECLARE_TLV_DB_SCALE(name, min, step, mute) */
 static const DECLARE_TLV_DB_SCALE(dac_vol_tlv, -9600, 50, 1);
 static const DECLARE_TLV_DB_SCALE(adc_vol_tlv, -9600, 50, 1);
 static const DECLARE_TLV_DB_SCALE(hpmixer_gain_tlv, -1200, 150, 0);
@@ -707,31 +671,13 @@ static int es8316_pcm_hw_params(struct snd_pcm_substream *substream,
 	struct snd_soc_pcm_runtime *rtd = substream->private_data;
 	struct snd_soc_codec *codec = rtd->codec;
 	struct es8316_priv *es8316 = snd_soc_codec_get_drvdata(codec);
-	int retv;
-
-	u16 osrate  =  snd_soc_read(codec,
-				    ES8316_CLKMGR_ADCOSR_REG03) & 0xc0;
 	u16 mclkdiv = snd_soc_read(codec,
 				   ES8316_CLKMGR_CLKSW_REG01) & 0x7f;
-	u16 srate = snd_soc_read(codec,
-				 ES8316_SDP_MS_BCKDIV_REG09) & 0xE0;
 	u16 adciface = snd_soc_read(codec,
 				    ES8316_SDP_ADCFMT_REG0A) & 0xE3;
 	u16 daciface = snd_soc_read(codec,
 				    ES8316_SDP_DACFMT_REG0B) & 0xE3;
-	u16 adcdiv   = snd_soc_read(codec,
-				    ES8316_CLKMGR_ADCDIV1_REG04);
-	u16 adclrckdiv_l = snd_soc_read(codec,
-					ES8316_CLKMGR_ADCDIV2_REG05) & 0x00;
-	u16 dacdiv   = snd_soc_read(codec, ES8316_CLKMGR_DACDIV1_REG06);
-	u16 daclrckdiv_l = snd_soc_read(codec,
-					ES8316_CLKMGR_DACDIV2_REG07) & 0x00;
 	int coeff;
-	u16 adclrckdiv_h = adcdiv & 0xf0;
-	u16 daclrckdiv_h = dacdiv & 0xf0;
-
-	adcdiv &= 0x0f;
-	dacdiv &= 0x0f;
 
 	if (!es8316->sysclk_constraints) {
 		dev_err(codec->dev, "No MCLK configured\n");
@@ -768,33 +714,10 @@ static int es8316_pcm_hw_params(struct snd_pcm_substream *substream,
 		break;
 	}
 
-	/* set iface & srate*/
+	/* set iface */ 
 	snd_soc_update_bits(codec, ES8316_SDP_DACFMT_REG0B, 0xe3, daciface);
 	snd_soc_update_bits(codec, ES8316_SDP_ADCFMT_REG0A, 0xe3, adciface);
 	snd_soc_update_bits(codec, ES8316_CLKMGR_CLKSW_REG01, 0x80, mclkdiv);
-	if (coeff >= 0) {
-		osrate = coeff_div[coeff].osr;
-		osrate &= 0x3f;
-
-		srate |= coeff_div[coeff].sr;
-		srate &= 0x1f;
-
-		adcdiv |= (coeff_div[coeff].div << 4);
-		adclrckdiv_h |= coeff_div[coeff].lrck_h;
-		adcdiv &= 0xf0;
-		adclrckdiv_h &= 0x0f;
-		adcdiv |= adclrckdiv_h;
-		adclrckdiv_l = coeff_div[coeff].lrck_l;
-
-		dacdiv |= (coeff_div[coeff].div << 4);
-		daclrckdiv_h |= coeff_div[coeff].lrck_h;
-		dacdiv &= 0xf0;
-		daclrckdiv_h &= 0x0f;
-		dacdiv |= daclrckdiv_h;
-		daclrckdiv_l = coeff_div[coeff].lrck_l;
-	}
-
-	retv = snd_soc_read(codec, ES8316_GPIO_FLAG);
 	return 0;
 }
 
@@ -802,7 +725,6 @@ static int es8316_mute(struct snd_soc_dai *dai, int mute)
 {
 	struct snd_soc_codec *codec = dai->codec;
 
-	mute_flag = mute;
 	if (mute) {
 		snd_soc_write(codec, ES8316_DAC_SET1_REG30, 0x20);
 	} else if (dai->playback_active) {
@@ -966,24 +888,14 @@ static int es8316_suspend(struct snd_soc_codec *codec)
 
 static int es8316_resume(struct snd_soc_codec *codec)
 {
-	struct es8316_priv *es8316 = snd_soc_codec_get_drvdata(codec);
 	int retv;
 
-	pr_info("%s: %d\n", __func__, __LINE__);
 	retv = es8316_reset(codec); /* UPDATED BY DAVID,15-3-5 */
 	retv = snd_soc_read(codec, ES8316_CLKMGR_ADCDIV2_REG05);
 	if (retv == 0) {
 		es8316_init_regs(codec);
-		if (es8316->dmic_amic ==  dmic_used) 
-		{
-			/* set gpio2 to DMIC CLK */
-			snd_soc_write(codec, ES8316_GPIO_SEL_REG4D, 0x02);
-		}
-		else 
-		{
-			/* set gpio2 to GM SHORT */
-			snd_soc_write(codec, ES8316_GPIO_SEL_REG4D, 0x00);
-		}
+		/* set gpio2 to GM SHORT */
+		snd_soc_write(codec, ES8316_GPIO_SEL_REG4D, 0x00);
 		/* max debance time, enable interrupt, low active */
 		snd_soc_write(codec, ES8316_GPIO_DEBUNCE_INT_REG4E, 0xf3);
 		snd_soc_write(codec, ES8316_CPHP_OUTEN_REG17, 0x00);
@@ -1007,8 +919,6 @@ static int es8316_resume(struct snd_soc_codec *codec)
 static int es8316_probe(struct snd_soc_codec *codec)
 {
 
-	DBG("---%s--start--\n", __func__);
-	g_es8316_codec = codec;
 	es8316_init_regs(codec);
 	es8316_init_reg = 1;
 	return 0;
@@ -1083,47 +993,26 @@ static int es8316_i2c_probe(struct i2c_client *i2c_client,
 			    const struct i2c_device_id *id)
 {
 	struct es8316_priv *es8316;
-	int ret;
-	printk("---%s---probe start\n", __func__);
+
 	es8316 = devm_kzalloc(&i2c_client->dev, sizeof(struct es8316_priv),
-                                GFP_KERNEL);
-	printk("---%s---probe start---------------------\n", __func__);
-	if (es8316 == NULL) {
-		printk("Exit %s, es8316 == NULL\n", __func__);
+			      GFP_KERNEL);
+	if (es8316 == NULL)
 		return -ENOMEM;
-	} else {
-		 es8316_private = es8316;
-	}
-	es8316->dmic_amic = amic_used;     /*if internal mic is amic*/
-	es8316->pwr_count = 0;
+
 	es8316->i2c = i2c_client;
 	i2c_set_clientdata(i2c_client, es8316);
+
 	es8316->regmap = devm_regmap_init_i2c(i2c_client, &es8316_regmap);
-        if (IS_ERR(es8316->regmap)) {
-                ret = PTR_ERR(es8316->regmap);
-                dev_err(&i2c_client->dev, "Failed to allocate register map: %d\n",
-                        ret);
-                return ret;
-        }
+	if (IS_ERR(es8316->regmap))
+		return PTR_ERR(es8316->regmap);
 
-	ret =  snd_soc_register_codec(&i2c_client->dev,
-			&soc_codec_dev_es8316,
-			&es8316_dai, 1);
-	if (ret < 0) {
-		kfree(es8316);
-		printk("Exit %s!!!!!!!!, error\n", __func__);
-		return ret;
-	}
-
-	printk("Exit %s!!!!!!!!, ok\n", __func__);
-
-	return ret;
+	return snd_soc_register_codec(&i2c_client->dev, &soc_codec_dev_es8316,
+				      &es8316_dai, 1);
 }
 
-static  int es8316_i2c_remove(struct i2c_client *client)
+static int es8316_i2c_remove(struct i2c_client *client)
 {
 	snd_soc_unregister_codec(&client->dev);
-	kfree(i2c_get_clientdata(client));
 	return 0;
 }
 
@@ -1133,32 +1022,27 @@ static const struct i2c_device_id es8316_i2c_id[] = {
 };
 MODULE_DEVICE_TABLE(i2c, es8316_i2c_id);
 
-#ifdef CONFIG_OF
 static const struct of_device_id es8316_of_match[] = {
         { .compatible = "everest,es8316", },
         {},
 };
 MODULE_DEVICE_TABLE(of, es8316_of_match);
-#endif
 
-#ifdef CONFIG_ACPI
 static const struct acpi_device_id es8316_acpi_match[] = {
 	{"ESSX8316", 0},
 	{},
 };
 MODULE_DEVICE_TABLE(acpi, es8316_acpi_match);
-#endif
+
 static struct i2c_driver es8316_i2c_driver = {
 	.driver = {
 		.name = "es8316",
-		.owner = THIS_MODULE,
 		.acpi_match_table = ACPI_PTR(es8316_acpi_match),
 		.of_match_table = of_match_ptr(es8316_of_match),
 	},
 	.shutdown = es8316_i2c_shutdown,
 	.probe = es8316_i2c_probe,
 	.remove = es8316_i2c_remove,
-	.class  = I2C_CLASS_HWMON,
 	.id_table = es8316_i2c_id,
 };
 module_i2c_driver(es8316_i2c_driver);
