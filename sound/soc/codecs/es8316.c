@@ -34,13 +34,6 @@
 #endif
 #define alsa_dbg DBG
 
-int es8316_init_reg = 0;
-
-struct snd_soc_codec *es8316_codec;
-static int es8316_init_regs(struct snd_soc_codec *codec);
-static int es8316_set_bias_level(struct snd_soc_codec *codec,
-				 enum snd_soc_bias_level level);
-
 static const struct reg_default es8316_reg_defaults[] = {
 	{0x00, 0x03}, {0x01, 0x03}, {0x02, 0x00}, {0x03, 0x20},
 	{0x04, 0x11}, {0x05, 0x00}, {0x06, 0x11}, {0x07, 0x00},
@@ -911,7 +904,6 @@ static int es8316_resume(struct snd_soc_codec *codec)
 		snd_soc_write(codec, ES8316_SYS_LP2_REG0F, 0xFF);
 		snd_soc_write(codec, ES8316_CLKMGR_CLKSW_REG01, 0xF3);
 		snd_soc_update_bits(codec, ES8316_ADC_PDN_LINSEL_REG22, 0xc0,0xc0);
-		es8316_init_reg = 1;
 	}
 	return 0;
 }
@@ -920,7 +912,6 @@ static int es8316_probe(struct snd_soc_codec *codec)
 {
 
 	es8316_init_regs(codec);
-	es8316_init_reg = 1;
 	return 0;
 }
 
