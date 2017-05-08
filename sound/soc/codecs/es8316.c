@@ -57,20 +57,6 @@ static const struct reg_default es8316_reg_defaults[] = {
 	{0x4c, 0xff}, {0x4d, 0x00}, {0x4e, 0x00}, {0x4f, 0xff},
 	{0x50, 0x00}, {0x51, 0x00}, {0x52, 0x00}, {0x53, 0x00},
 };
-static bool es8316_readable(struct device *dev, unsigned int reg)
-{
-	if (reg <= 90)
-		return 1;
-	else
-		return 0;
-}
-static bool es8316_volatile(struct device *dev, unsigned int reg)
-{
-	if (reg <= 90)
-		return 1;
-	else
-		return 0;
-}
 
 /* codec private data */
 struct es8316_priv {
@@ -945,8 +931,6 @@ static const struct regmap_config es8316_regmap = {
         .val_bits = 8,
         .use_single_rw = true,
         .max_register = 0x53,
-        .volatile_reg = es8316_volatile,
-        .readable_reg = es8316_readable,
 
         .cache_type = REGCACHE_RBTREE,
         .reg_defaults = es8316_reg_defaults,
